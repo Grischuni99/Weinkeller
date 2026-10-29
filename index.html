@@ -157,6 +157,16 @@ img{max-width:100%}
 .icon-btn{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;padding:0}
 .icon-btn svg{width:18px;height:18px}
 .sources{margin:8px 0 0;padding-left:18px;font-size:13px}
+.pair-filter{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--muted)}
+.pair-filter select{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:var(--r);padding:8px 10px;font-size:14px;font-weight:500}
+.tag-cat{border:1px solid var(--wine);background:var(--wine-soft);color:var(--wine);font-weight:600;cursor:pointer}
+fieldset.pair-pick{border:0;padding:0;margin:0;min-width:0}
+fieldset.pair-pick legend{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.03em;padding:0;margin-bottom:6px}
+.chip-check{position:relative;display:inline-flex}
+.chip-check input{position:absolute;opacity:0;pointer-events:none}
+.chip-check span{border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:500;color:var(--fg);cursor:pointer;user-select:none}
+.chip-check input:checked + span{background:var(--wine);border-color:var(--wine);color:var(--on-wine)}
+.chip-check input:focus-visible + span{outline:2px solid var(--wine);outline-offset:2px}
 .sources a{color:var(--wine)}
 </style>
 </head>
@@ -213,6 +223,9 @@ img{max-width:100%}
   <div class="tools">
     <input class="search" id="q" type="search" placeholder="Suchen: Weingut, Wein, Rebsorte, Region …" aria-label="Suchen">
     <div class="chips" id="chips"></div>
+    <label class="pair-filter" for="pairSel"><span>Passt zu</span>
+      <select id="pairSel"><option value="">alle Speisen</option></select>
+    </label>
   </div>
   <div class="list" id="list"></div>
 </main>
@@ -230,6 +243,32 @@ const YEAR = new Date().getFullYear();
 const BUCKET = "wine-photos";
 const COLORS = {rot:{label:"Rot",c:"#7a1f35"},weiss:{label:"Weiss",c:"#d8c36a"},rose:{label:"Rosé",c:"#e597a6"},schaum:{label:"Schaumwein",c:"#b9c7a0"},suess:{label:"Süsswein",c:"#c98a2b"}};
 const PROFILE = [["acidity","Weich","Säurehaltig"],["body","Leicht","Üppig"],["sweetness","Trocken","Süss"],["tannin","Sanft","Tanninhaltig"]];
+const PAIRINGS = [
+  ["Rotes Fleisch",              ["rotes fleisch","rind","beef","steak","entrec","lamm","lamb","hackbraten"]],
+  ["Weisses Fleisch & Geflügel", ["weisses fleisch","kalb","schwein","geflügel","gefluegel","poulet","huhn","hähnchen","haehnchen","truthahn","pute","ente","perlhuhn"]],
+  ["Wild",                       ["wild","reh","hirsch","gams","hase","fasan"]],
+  ["Fisch",                      ["fisch","lachs","forelle","egli","zander","felchen","thun","dorade","kabeljau","saibling"]],
+  ["Meeresfrüchte",              ["meeresfrücht","meeresfruecht","crevett","garnel","muschel","auster","hummer","scampi","calamar","tintenfisch"]],
+  ["Käse",                       ["käse","kaese","raclette","fondue","gruy","parmesan","brie","comté","comte"]],
+  ["Vegetarisch",                ["vegetar","vegan","gemüse","gemuese","pilz","risotto","spargel","kürbis","kuerbis","salat"]],
+  ["Pasta & Pizza",              ["pasta","pizza","lasagne","spaghetti","nudel","ravioli","gnocchi"]],
+  ["Asiatisch & scharf",         ["asiat","curry","sushi","thai","scharf","indisch","chinesisch"]],
+  ["Apéro & Vorspeisen",         ["apéro","apero","aperitif","vorspeise","tapas","antipast","charcuterie","salami","wurst","trockenfleisch","rohschinken","schinken"]],
+  ["Dessert",                    ["dessert","schokolade","kuchen","tarte","gebäck","gebaeck","früchte","fruechte","süssspeise"]]
+];
+const PAIR_NAMES = PAIRINGS.map(p=>p[0]);
+function pairCats(w){
+  // Sind Gruppen ausdrücklich gewählt, gelten nur diese; sonst aus Stichworten ableiten (alte Einträge, Erkennung)
+  const explicit=(w.pairings||[]).filter(p=>PAIR_NAMES.includes(p));
+  if(explicit.length) return PAIR_NAMES.filter(n=>explicit.includes(n));
+  const out=new Set();
+  (w.pairings||[]).forEach(item=>{
+    const t=String(item).toLowerCase();
+    PAIRINGS.forEach(([name,keys])=>{ if(t===name.toLowerCase() || keys.some(k=>t.includes(k))) out.add(name); });
+  });
+  return PAIR_NAMES.filter(n=>out.has(n));
+}
+let pairFilter="";
 const FIELDS = ["producer","name","vintage","color","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description","notes"];
 let loading=false, sb=null, user=null, wines=[], photoUrls={}, filter="alle", query="", loaded=false;
 const pending = {};
@@ -297,6 +336,12 @@ function renderChips(){
   const opts=[["alle","Alle"],["vorrat","Im Keller"],...Object.entries(COLORS).map(([k,v])=>[k,v.label])];
   $("#chips").innerHTML = opts.map(([k,l])=>`<button class="chip" type="button" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join("");
 }
+function renderPairSelect(){
+  const sel=$("#pairSel"); if(!sel) return;
+  const counts={}; wines.forEach(w=>pairCats(w).forEach(c=>counts[c]=(counts[c]||0)+1));
+  sel.innerHTML=`<option value="">alle Speisen</option>`+PAIR_NAMES.map(n=>`<option value="${esc(n)}" ${pairFilter===n?"selected":""}>${esc(n)} (${counts[n]||0})</option>`).join("");
+  sel.value=pairFilter;
+}
 function renderStats(){
   if(!loaded) return;
   const bottles = wines.reduce((s,w)=>s+(num(w.bottles)||0),0);
@@ -306,13 +351,14 @@ function renderStats(){
 function matches(w){
   if(filter==="vorrat" && !(num(w.bottles)>0)) return false;
   if(COLORS[filter] && w.color!==filter) return false;
+  if(pairFilter && !pairCats(w).includes(pairFilter)) return false;
   if(!query) return true;
-  const hay=[w.producer,w.name,w.grape,w.region,w.country,w.appellation,w.vintage].join(" ").toLowerCase();
+  const hay=[w.producer,w.name,w.grape,w.region,w.country,w.appellation,w.vintage,...(w.pairings||[])].join(" ").toLowerCase();
   return query.toLowerCase().split(/\s+/).every(t=>hay.includes(t));
 }
 const emptyHtml = `<div class="empty-state"><h2>Dein Keller ist noch leer</h2><p>Tippe auf <strong>Foto</strong> und fotografiere ein Etikett. Die Angaben werden danach automatisch ergänzt.<br>Oder lies im Menü ein Backup ein.</p></div>`;
 function renderList(){
-  renderStats();
+  renderStats(); renderPairSelect();
   if(!loaded) return;
   const items = wines.filter(matches).sort((a,b)=>(a.producer||"").localeCompare(b.producer||"","de")||(a.name||"").localeCompare(b.name||"","de")||(num(a.vintage)||0)-(num(b.vintage)||0));
   if(!wines.length){ $("#list").innerHTML=emptyHtml; return; }
@@ -391,7 +437,7 @@ function openDetail(id){
     <dl class="facts">${facts.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
     ${windowHtml(w)}
     ${profileHtml(w.profile)}
-    ${w.pairings?.length?`<div class="section"><h3>Passt zu</h3><div class="tags">${w.pairings.map(p=>`<span class="tag">${esc(p)}</span>`).join("")}</div></div>`:""}
+    ${w.pairings?.length?`<div class="section"><h3>Passt zu</h3><div class="tags">${pairCats(w).map(c=>`<button type="button" class="tag tag-cat" data-pair="${esc(c)}">${esc(c)}</button>`).join("")}${w.pairings.filter(p=>!PAIR_NAMES.includes(p)).map(p=>`<span class="tag">${esc(p)}</span>`).join("")}</div></div>`:""}
     ${w.description?`<div class="section"><h3>Über den Wein</h3><p class="prose">${esc(w.description)}</p>${sourcesHtml(w.source)}</div>`:""}
     ${w.notes?`<div class="section"><h3>Meine Notizen</h3><p class="prose">${esc(w.notes)}</p></div>`:""}
     <div class="actions"><button class="btn" type="button" data-edit="${esc(w.id)}">Bearbeiten</button><button class="btn danger" type="button" id="btnDel">Wein entfernen</button></div>
@@ -443,7 +489,10 @@ function formHtml(w, busy){
     </div>
     <div class="grid2">${PROFILE.map(([k,l,r])=>`<label class="f">${l} ↔ ${r}<input id="f-p-${k}" name="p-${k}" type="range" min="0" max="5" step="1" value="${esc(p[k]??0)}"></label>`).join("")}</div>
     <p class="note" style="margin:-6px 0 0">Regler ganz links = keine Angabe.</p>
-    <label class="f">Passt zu (mit Komma trennen)<input id="f-pairings" name="pairings" value="${esc((w.pairings||[]).join(", "))}"></label>
+    <fieldset class="f pair-pick"><legend>Passt zu</legend>
+      <div class="chips">${PAIR_NAMES.map((n,i)=>`<label class="chip-check"><input type="checkbox" id="f-pc-${i}" name="pc" value="${esc(n)}" ${pairCats(w).includes(n)?"checked":""}><span>${esc(n)}</span></label>`).join("")}</div>
+      <label class="f" style="margin-top:8px">Genauer (optional, mit Komma trennen)<input id="f-pairings" name="pairings" placeholder="z. B. Kalbsgeschnetzeltes, Raclette" value="${esc((w.pairings||[]).filter(p=>!PAIR_NAMES.includes(p)).join(", "))}"></label>
+    </fieldset>
     <label class="f">Über den Wein<textarea id="f-description" name="description">${v("description")}</textarea></label>
     <label class="f">Meine Notizen<textarea id="f-notes" name="notes">${v("notes")}</textarea></label>
     <div class="actions" style="margin-top:4px"><button class="btn primary" type="submit" id="btnSave">Im Keller speichern</button><button class="btn ghost" type="button" data-close>Abbrechen</button></div>
@@ -453,7 +502,8 @@ function readForm(){
   const f=$("#wineForm"), g=n=>f.elements[n]?.value.trim()||"", out={};
   FIELDS.forEach(k=>out[k]=g(k));
   out.bottles=Math.max(0,num(g("bottles"))||0);
-  out.pairings=g("pairings").split(",").map(s=>s.trim()).filter(Boolean);
+  const cats=[...f.querySelectorAll('input[name="pc"]:checked')].map(i=>i.value);
+  out.pairings=[...cats, ...g("pairings").split(",").map(s=>s.trim()).filter(s=>s && !PAIR_NAMES.includes(s))];
   out.profile={}; PROFILE.forEach(([k])=>{const n=Number(g("p-"+k)); if(n>0) out.profile[k]=n;});
   return out;
 }
@@ -479,7 +529,11 @@ function fillForm(info){
   const set=(n,v)=>{ const el=f.elements[n]; if(el && v!=null && v!=="" && !el.value) el.value=v; };
   ["producer","name","vintage","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description"].forEach(k=>set(k,info[k]!=null?String(info[k]):""));
   if(info.color && COLORS[info.color] && !f.elements.color.value) f.elements.color.value=info.color;
-  if(Array.isArray(info.pairings) && !f.elements.pairings.value) f.elements.pairings.value=info.pairings.join(", ");
+  if(Array.isArray(info.pairings) && info.pairings.length){
+    const cats=pairCats({pairings:info.pairings});
+    f.querySelectorAll('input[name="pc"]').forEach(i=>{ if(cats.includes(i.value)) i.checked=true; });
+    if(!f.elements.pairings.value) f.elements.pairings.value=info.pairings.filter(p=>!PAIR_NAMES.includes(p)).join(", ");
+  }
   PROFILE.forEach(([k])=>{ const el=f.elements["p-"+k]; const n=Number(info.profile?.[k]); if(el && Number(el.value)===0 && n>=1 && n<=5) el.value=Math.round(n); });
 }
 
@@ -553,6 +607,7 @@ document.addEventListener("click",e=>{
   if(!e.target.closest(".menu")) $("#menuPop").hidden=true;
   if(!t) return;
   if(t.dataset.f){ filter=t.dataset.f; renderChips(); renderList(); return; }
+  if(t.dataset.pair){ pairFilter=t.dataset.pair; closeSheet(); renderList(); window.scrollTo({top:0,behavior:"smooth"}); toast("Gefiltert: passt zu "+pairFilter); return; }
   if(t.dataset.inc||t.dataset.dec){ const id=t.dataset.inc||t.dataset.dec; const w=wines.find(x=>x.id===id); setBottles(id,(num(w.bottles)||0)+(t.dataset.inc?1:-1)); if($(".sheet")&&!$("#wineForm")) openDetail(id); return; }
   if(t.dataset.open){ openDetail(t.dataset.open); return; }
   if(t.dataset.edit){ const w=wines.find(x=>x.id===t.dataset.edit); openForm({...w}); return; }
@@ -564,6 +619,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeSheet(); });
 $("#q").addEventListener("input",e=>{ query=e.target.value.trim(); renderList(); });
+$("#pairSel").addEventListener("change",e=>{ pairFilter=e.target.value; renderList(); });
 $("#btnPhoto").onclick=()=>$("#fileInput").click();
 $("#btnMenu").onclick=()=>{ const p=$("#menuPop"); p.hidden=!p.hidden; $("#btnMenu").setAttribute("aria-expanded",String(!p.hidden)); };
 $("#mManual").onclick=()=>{ $("#menuPop").hidden=true; openForm({bottles:1}); };

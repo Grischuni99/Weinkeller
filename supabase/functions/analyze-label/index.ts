@@ -19,6 +19,7 @@ Auf dem Bild ist ein Weinetikett (oder ein Screenshot davon).
 Antworte am Schluss NUR mit einem JSON-Objekt in genau dieser Form, ohne Text davor oder danach:
 {"producer":"","name":"","vintage":"","color":"rot|weiss|rose|schaum|suess","grape":"","appellation":"","region":"","country":"","alcohol":"","volume":"","price":"","drinkFrom":"","drinkTo":"","profile":{"acidity":null,"body":null,"sweetness":null,"tannin":null},"pairings":[],"description":"","sources":[{"title":"","url":""}],"confidence":"hoch|mittel|tief"}
 
+Für "pairings": zuerst 1–4 passende Gruppen genau aus dieser Liste wählen: "Rotes Fleisch", "Weisses Fleisch & Geflügel", "Wild", "Fisch", "Meeresfrüchte", "Käse", "Vegetarisch", "Pasta & Pizza", "Asiatisch & scharf", "Apéro & Vorspeisen", "Dessert". Danach optional 1–3 konkrete Gerichte (z. B. "Kalbsgeschnetzeltes").
 Hinweise: profile-Werte sind Zahlen 1–5 (acidity 1=weich 5=säurehaltig, body 1=leicht 5=üppig, sweetness 1=trocken 5=süss, tannin 1=sanft 5=tanninhaltig; bei Weisswein tannin null). alcohol nur Zahl ("13.5"), volume in cl als Zahl ("75"), Jahreszahlen vierstellig, price z. B. "CHF 24".`;
 
 function json(body: unknown, status = 200) {

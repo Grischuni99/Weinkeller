@@ -54,7 +54,7 @@ Ablauf beim Erfassen: Foto → im Browser auf max. 1400 px verkleinert → Uploa
 | `price` | text | frei, z. B. "CHF 24" | `price` |
 | `drink_from`, `drink_to` | text | Trinkfenster (Jahre) | `drinkFrom`, `drinkTo` |
 | `profile` | jsonb | `{acidity, body, sweetness, tannin}` je 1–5 | `profile` |
-| `pairings` | text[] | Speiseempfehlungen | `pairings` |
+| `pairings` | text[] | Speise-Gruppen (genau die Namen aus `PAIRINGS`) und optional konkrete Gerichte | `pairings` |
 | `description` | text | Beschreibung | `description` |
 | `source` | text | 1. Zeile Hinweis, weitere Zeilen `Titel \| URL` (Quellen) | `source` |
 | `notes` | text | eigene Notizen | `notes` |
@@ -90,7 +90,8 @@ Alles steckt in einer Funktion am Ende der Datei. Wichtige Teile, in dieser Reih
 
 | Abschnitt | Wichtige Namen |
 |---|---|
-| Konstanten | `COLORS` (Weinarten), `PROFILE` (4 Geschmacksregler), `FIELDS` (Textfelder des Formulars), `BUCKET` |
+| Konstanten | `COLORS` (Weinarten), `PROFILE` (4 Geschmacksregler), `PAIRINGS` (11 Speise-Gruppen mit Stichworten), `FIELDS` (Textfelder des Formulars), `BUCKET` |
+| Speise-Gruppen | `pairCats(w)`: ausdrücklich gewählte Gruppen in `pairings`, sonst aus Stichworten abgeleitet (z. B. „Kalbfleisch“ → Weisses Fleisch & Geflügel); `pairFilter`, `renderPairSelect()` |
 | Datenbank | `toRow(w)` App → Spalten, `fromRow(r)` Spalten → App, `loadWines()`, `saveWine(w)`, `uploadPhoto(blob)`, `refreshPhotoUrls()` |
 | Liste | `renderChips()`, `renderStats()`, `matches(w)` (Suche/Filter), `renderList()`, `setBottles(id, n)` |
 | Details | `openDetail(id)`, `windowHtml(w)` (Trinkfenster), `profileHtml(p)`, `sourcesHtml(src)` |
