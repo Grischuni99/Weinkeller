@@ -1,0 +1,37 @@
+# Hält das kostenlose Supabase-Projekt wach (wird sonst nach 1 Woche ohne Zugriff pausiert).
+# Liest die Adresse und den öffentlichen anon-Key aus config.js – keine weitere Einrichtung nötig.
+name: Supabase wach halten
+on:
+  schedule:
+    - cron: "17 6 */3 * *"   # alle 3 Tage um 06:17 UTC
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Supabase anpingen
+        run: |
+          URL=$(grep -oP 'supabaseUrl:\s*"\K[^"]+' config.js)
+          KEY=$(grep -oP 'supabaseAnonKey:\s*"\K[^"]+' config.js)
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "config.js ist noch nicht ausgefüllt"; exit 0; fi
+          curl -sS -f -X POST "$URL/rest/v1/rpc/ping" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}'
+      # GitHub schaltet geplante Aufgaben nach 60 Tagen ohne Änderung im Repository ab.
+      # Darum alle ~45 Tage eine winzige Änderung festhalten.
+      - name: Repository aktiv halten
+        run: |
+          LAST=$(git log -1 --format=%ct)
+          NOW=$(date +%s)
+          if [ $(( (NOW - LAST) / 86400 )) -ge 45 ]; then
+            date -u +%F > .keepalive
+            git config user.name "weinkeller-bot"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .keepalive
+            git commit -m "Weinkeller aktiv halten"
+            git push
+          fi
+
