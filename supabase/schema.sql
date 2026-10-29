@@ -33,6 +33,13 @@ create table if not exists public.wines (
 alter table public.wines add column if not exists wishlist boolean not null default false;
 alter table public.wines add column if not exists wish_note text default '';
 
+-- Bewertung aus dem Internet
+alter table public.wines add column if not exists ext_rating text default '';
+alter table public.wines add column if not exists ext_rating_scale text default '';
+alter table public.wines add column if not exists ext_rating_source text default '';
+alter table public.wines add column if not exists ext_rating_count text default '';
+alter table public.wines add column if not exists ext_rating_url text default '';
+
 alter table public.wines enable row level security;
 
 drop policy if exists "eigene Weine lesen" on public.wines;

@@ -13,7 +13,7 @@ Diese Notiz beschreibt, wie die App aufgebaut ist, damit sie später (auch in ei
 |---|---|---|
 | App (Oberfläche) | GitHub Pages: https://grischuni99.github.io/Weinkeller/ | Eine einzige Seite `index.html`, läuft im Browser und auf dem Handy-Home-Bildschirm |
 | Daten | Supabase-Projekt „Weinkeller“ (Ref `aqujdwzerevsuwfixjsu`, Region eu-west-1, Gratis-Plan) | Tabelle `wines`, Foto-Speicher `wine-photos`, Anmeldung |
-| Etikett-Erkennung | Supabase Edge Function `analyze-label` | Schickt das Foto an die Claude API mit Websuche, liefert JSON zurück |
+| Etikett-Erkennung | Supabase Edge Function `analyze-label` | Schickt das Foto an die Claude API mit Websuche, liefert JSON zurück (inkl. `extRating`, `foundOnline`, `labelReadable`). Mit `{mode:"rating", wine:{…}}` sucht sie nur die Bewertung eines bestehenden Weins |
 | Wach halten | GitHub Action `.github/workflows/keep-alive.yml` | Ruft alle 3 Tage `rpc/ping` auf, damit Supabase nicht pausiert; committet alle ~45 Tage `.keepalive`, damit GitHub die Aufgabe nicht abschaltet |
 
 Ablauf beim Erfassen: Foto → im Browser auf max. 1400 px verkleinert → Upload nach `wine-photos/<user-id>/<uuid>.jpg` → `functions.invoke("analyze-label")` → Formular wird vorausgefüllt → Benutzer prüft → Speichern in `wines`.
@@ -63,6 +63,11 @@ Ablauf beim Erfassen: Foto → im Browser auf max. 1400 px verkleinert → Uploa
 | `photo_path` | text | Pfad im Bucket `wine-photos` | `photoPath` |
 | `wishlist` | boolean, default false | `true` = auf der Wunschliste (noch nicht gekauft) | `wishlist` |
 | `wish_note` | text | Wo getrunken / wo erhältlich | `wishNote` |
+| `ext_rating` | text | Bewertung aus dem Internet, z. B. "3.9" | `extRating` |
+| `ext_rating_scale` | text | "5", "20" oder "100" | `extScale` |
+| `ext_rating_source` | text | z. B. "Vivino" oder "Vivino, alle Jahrgänge" | `extSource` |
+| `ext_rating_count` | text | Anzahl Bewertungen (nur Ziffern) | `extCount` |
+| `ext_rating_url` | text | Seite, auf der die Bewertung steht | `extUrl` |
 | `created_at`, `updated_at` | timestamptz | `updated_at` per Trigger `wines_touch` | |
 
 **Zugriffsregeln (RLS):** Jede Person liest, erstellt, ändert und löscht nur Zeilen mit `user_id = auth.uid()`.
@@ -99,7 +104,8 @@ Alles steckt in einer Funktion am Ende der Datei. Wichtige Teile, in dieser Reih
 | Liste | `renderChips()`, `renderStats()`, `matches(w)` (Suche/Filter), `renderList()`, `setBottles(id, n)` |
 | Details | `openDetail(id)`, `windowHtml(w)` (Trinkfenster), `profileHtml(p)`, `sourcesHtml(src)` |
 | Formular | `formHtml(w)`, `readForm()`, `openForm(w)`, `fillForm(info)` (übernimmt Erkennungsergebnis, überschreibt keine bereits ausgefüllten Felder) |
-| Foto & Erkennung | `resize()`, `handlePhoto(file)` |
+| Foto & Erkennung | `resize()`, `handlePhoto(file)` (Meldung, wenn Etikett unlesbar oder Wein online nicht gefunden) |
+| Bewertung | `ratingText(w)`, `ratingBadge(w)`, `ratingFromInfo(x)`, `lookupRating(w, btn)` (Knopf „Bewertung suchen“ in den Details) |
 | Backup | `exportBackup()` (JSON inkl. Fotos als data-URL), `importBackup(file)` (überspringt gleiche Weingut+Name+Jahrgang) |
 | Anmeldung | `auth("login"/"signup")`, `onSession(session)` |
 

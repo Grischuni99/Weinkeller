@@ -167,6 +167,8 @@ img{max-width:100%}
 .views button[aria-selected="true"] span{background:var(--wine-soft);color:var(--wine)}
 .btn.buy{padding:8px 14px;font-size:13px;border-color:var(--wine);color:var(--wine);white-space:nowrap}
 .wish-note{font-size:13px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill.ext{background:var(--sunk);color:var(--fg)}
+.facts a,.prose a{color:var(--wine)}
 .pill.wish{background:var(--wine-soft);color:var(--wine)}
 .wish-toggle{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;cursor:pointer}
 .wish-toggle input{width:20px;height:20px;accent-color:var(--wine);margin:0}
@@ -288,7 +290,7 @@ function setView(v){
   if(view==="wunsch" && filter==="vorrat") filter="alle";
   renderChips(); renderList();
 }
-const FIELDS = ["producer","name","vintage","color","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description","notes","wishNote"];
+const FIELDS = ["producer","name","vintage","color","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description","notes","wishNote","extRating","extScale","extSource","extUrl"];
 let loading=false, sb=null, user=null, wines=[], photoUrls={}, filter="alle", query="", loaded=false;
 const pending = {};
 const $ = s => document.querySelector(s);
@@ -304,12 +306,14 @@ const toRow = w => ({
   price:w.price||"", drink_from:w.drinkFrom||"", drink_to:w.drinkTo||"", profile:w.profile||{}, pairings:w.pairings||[],
   description:w.description||"", source:w.source||"", notes:w.notes||"", rating:num(w.rating)||0,
   bottles:Math.max(0,num(w.bottles)||0), photo_path:w.photoPath||null,
-  wishlist:!!w.wishlist, wish_note:w.wishNote||""
+  wishlist:!!w.wishlist, wish_note:w.wishNote||"",
+  ext_rating:w.extRating||"", ext_rating_scale:w.extScale||"", ext_rating_source:w.extSource||"", ext_rating_count:w.extCount||"", ext_rating_url:w.extUrl||""
 });
 const fromRow = r => ({ id:r.id, producer:r.producer, name:r.name, vintage:r.vintage, color:r.color, grape:r.grape,
   appellation:r.appellation, region:r.region, country:r.country, alcohol:r.alcohol, volume:r.volume, price:r.price,
   drinkFrom:r.drink_from, drinkTo:r.drink_to, profile:r.profile||{}, pairings:r.pairings||[], description:r.description,
-  source:r.source, notes:r.notes, rating:r.rating, bottles:r.bottles, photoPath:r.photo_path, createdAt:r.created_at, wishlist:!!r.wishlist, wishNote:r.wish_note||"" });
+  source:r.source, notes:r.notes, rating:r.rating, bottles:r.bottles, photoPath:r.photo_path, createdAt:r.created_at, wishlist:!!r.wishlist, wishNote:r.wish_note||"",
+  extRating:r.ext_rating||"", extScale:r.ext_rating_scale||"", extSource:r.ext_rating_source||"", extCount:r.ext_rating_count||"", extUrl:r.ext_rating_url||"" });
 
 async function loadWines(){
   const {data,error} = await sb.from("wines").select("*");
@@ -340,6 +344,37 @@ async function uploadPhoto(blob){
   const {data} = await sb.storage.from(BUCKET).createSignedUrl(path, 60*60*12);
   if(data?.signedUrl) photoUrls[path]=data.signedUrl;
   return path;
+}
+
+/* ---------- Bewertung aus dem Internet ---------- */
+const fmtNum = v => String(v).replace(".",",");
+function ratingText(w){
+  if(!w.extRating) return "";
+  const sc=String(w.extScale||"5");
+  return sc==="5" ? `★ ${fmtNum(w.extRating)}` : `${fmtNum(w.extRating)}/${sc}`;
+}
+function ratingBadge(w){
+  const t=ratingText(w); if(!t) return "";
+  return `<span class="pill ext" title="Bewertung im Internet">${esc(t)}${w.extSource?` · ${esc(w.extSource.split(",")[0])}`:""}</span>`;
+}
+function ratingFromInfo(x){
+  if(!x || x.value==null || x.value==="") return null;
+  const count = x.count ? String(x.count).replace(/[^\d]/g,"") : "";
+  return { extRating:String(x.value).replace(",","."), extScale:String(x.scale||"5"),
+    extSource:(x.source||"")+(x.vintageOnly===false?", alle Jahrgänge":""), extCount:count, extUrl:/^https?:\/\//.test(x.url||"")?x.url:"" };
+}
+async function lookupRating(w, btn){
+  btn.disabled=true; btn.textContent="Sucht im Internet …";
+  try{
+    const {data,error}=await sb.functions.invoke("analyze-label",{body:{mode:"rating", wine:{producer:w.producer,name:w.name,vintage:w.vintage,grape:w.grape,region:w.region,country:w.country}}});
+    if(error){ let msg=error.message; try{ const j=await error.context?.json?.(); if(j?.error) msg=j.error; }catch{} throw new Error(msg); }
+    if(data?.error) throw new Error(data.error);
+    const r=ratingFromInfo(data?.extRating);
+    if(!r){ toast("Keine verlässliche Bewertung im Internet gefunden."); btn.disabled=false; btn.textContent="Bewertung suchen"; return; }
+    const row={ext_rating:r.extRating, ext_rating_scale:r.extScale, ext_rating_source:r.extSource, ext_rating_count:r.extCount, ext_rating_url:r.extUrl};
+    const {error:e2}=await sb.from("wines").update(row).eq("id",w.id); if(e2) throw e2;
+    Object.assign(w,r); renderList(); openDetail(w.id); toast("Bewertung ergänzt: "+ratingText(w)+(r.extSource?" · "+r.extSource:""));
+  }catch(e){ toast("Suche fehlgeschlagen: "+(e.message||"bitte später nochmals versuchen")); btn.disabled=false; btn.textContent="Bewertung suchen"; }
 }
 
 function photoSrc(w){ return w.localPreview || (w.photoPath ? photoUrls[w.photoPath] : "") || ""; }
@@ -399,7 +434,7 @@ function renderList(){
       <button class="row-main" data-open="${esc(w.id)}">
         <div class="producer">${esc(w.producer||"Unbekanntes Weingut")}</div>
         <div class="wname">${esc(w.name||"Ohne Namen")}${w.vintage?" "+esc(w.vintage):""}</div>
-        <div class="meta">${col?`<span><span class="dot" style="background:${col.c}"></span>${col.label}</span>`:""}${w.grape?`<span>${esc(w.grape)}</span>`:""}${w.region?`<span>${esc(w.region)}</span>`:""}${!wish&&st?`<span class="pill ${st.cls}">${st.txt}</span>`:""}</div>
+        <div class="meta">${col?`<span><span class="dot" style="background:${col.c}"></span>${col.label}</span>`:""}${w.grape?`<span>${esc(w.grape)}</span>`:""}${w.region?`<span>${esc(w.region)}</span>`:""}${ratingBadge(w)}${!wish&&st?`<span class="pill ${st.cls}">${st.txt}</span>`:""}</div>
         ${wish&&w.wishNote?`<div class="wish-note">${esc(w.wishNote)}</div>`:""}
       </button>
       ${wish?`<button class="btn buy" type="button" data-buy="${esc(w.id)}">Gekauft</button>`:`<div class="counter" aria-label="Flaschen">
@@ -449,6 +484,7 @@ function openDetail(id){
   const w=wines.find(x=>x.id===id); if(!w) return;
   const col=COLORS[w.color], src=photoSrc(w), r=num(w.rating)||0;
   const facts=[["Weingut",w.producer],["Jahrgang",w.vintage],["Weinart",col?.label],["Rebsorte",w.grape],["Region",[w.region,w.country].filter(Boolean).join(", ")],["Appellation",w.appellation],["Alkohol",w.alcohol?w.alcohol+" % vol":""],["Flasche",w.volume?w.volume+" cl":""],["Preis",w.price],["Wo getrunken / erhältlich",w.wishNote]].filter(f=>f[1]);
+  const extHtml = w.extRating ? `<dt>Bewertung im Netz</dt><dd><strong>${esc(ratingText(w))}</strong>${w.extSource?` · ${w.extUrl?`<a href="${esc(w.extUrl)}" target="_blank" rel="noopener">${esc(w.extSource)}</a>`:esc(w.extSource)}`:""}${w.extCount?` <span class="sub">(${Number(w.extCount).toLocaleString("de-CH")} Bewertungen)</span>`:""}</dd>` : "";
   const wish=!!w.wishlist;
   openSheet(`
     <div class="sheet-top"><span class="sub">${esc(w.producer||"")}</span><button class="x" type="button" data-close aria-label="Schliessen">×</button></div>
@@ -467,16 +503,17 @@ function openDetail(id){
           <div class="stars">${[1,2,3,4,5].map(i=>`<button type="button" data-rate="${i}" class="${i<=r?"on":""}" aria-label="${i} Sterne">★</button>`).join("")}</div></div>
       </div>
     </div>
-    <dl class="facts">${facts.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+    <dl class="facts">${facts.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}${extHtml}</dl>
     ${wish?"":windowHtml(w)}
     ${profileHtml(w.profile)}
     ${w.pairings?.length?`<div class="section"><h3>Passt zu</h3><div class="tags">${pairCats(w).map(c=>`<button type="button" class="tag tag-cat" data-pair="${esc(c)}">${esc(c)}</button>`).join("")}${w.pairings.filter(p=>!PAIR_NAMES.includes(p)).map(p=>`<span class="tag">${esc(p)}</span>`).join("")}</div></div>`:""}
     ${w.description?`<div class="section"><h3>Über den Wein</h3><p class="prose">${esc(w.description)}</p>${sourcesHtml(w.source)}</div>`:""}
     ${w.notes?`<div class="section"><h3>Meine Notizen</h3><p class="prose">${esc(w.notes)}</p></div>`:""}
-    <div class="actions"><button class="btn" type="button" data-edit="${esc(w.id)}">Bearbeiten</button><button class="btn danger" type="button" id="btnDel">Wein entfernen</button></div>
+    <div class="actions"><button class="btn" type="button" data-edit="${esc(w.id)}">Bearbeiten</button><button class="btn" type="button" id="btnRating">${w.extRating?"Bewertung aktualisieren":"Bewertung suchen"}</button><button class="btn danger" type="button" id="btnDel">Wein entfernen</button></div>
     <div id="delConfirm" hidden class="status err" style="margin-top:12px;flex-wrap:wrap"><span style="flex:1;min-width:12em">Diesen Wein endgültig entfernen?</span><button class="btn danger" type="button" data-del="${esc(w.id)}">Entfernen</button><button class="btn ghost" type="button" id="btnDelNo">Abbrechen</button></div>
   `);
   $("#btnDel").onclick=()=>{$("#delConfirm").hidden=false;};
+  $("#btnRating").onclick=e=>lookupRating(w, e.currentTarget);
   $("#btnDelNo").onclick=()=>{$("#delConfirm").hidden=true;};
   document.querySelectorAll("[data-rate]").forEach(b=>b.onclick=async()=>{
     const v=Number(b.dataset.rate); w.rating=(num(w.rating)===v)?0:v; openDetail(id);
@@ -521,6 +558,12 @@ function formHtml(w, busy){
       <label class="f">Inhalt cl<input id="f-volume" name="volume" inputmode="decimal" value="${v("volume")}"></label>
       <label class="f">Preis<input id="f-price" name="price" value="${v("price")}" placeholder="z. B. CHF 24"></label>
     </div>
+    <div class="grid3">
+      <label class="f">Bewertung im Netz<input id="f-extRating" name="extRating" inputmode="decimal" placeholder="z. B. 3.9" value="${v("extRating")}"></label>
+      <label class="f">Skala<select id="f-extScale" name="extScale">${["5","20","100"].map(x=>`<option value="${x}" ${(w.extScale||"5")===x?"selected":""}>von ${x}</option>`).join("")}</select></label>
+      <label class="f">Quelle<input id="f-extSource" name="extSource" placeholder="z. B. Vivino" value="${v("extSource")}"></label>
+    </div>
+    <input type="hidden" id="f-extUrl" name="extUrl" value="${v("extUrl")}">
     <div class="grid2">
       <label class="f">Trinken ab<input id="f-drinkFrom" name="drinkFrom" inputmode="numeric" value="${v("drinkFrom")}"></label>
       <label class="f">Trinken bis<input id="f-drinkTo" name="drinkTo" inputmode="numeric" value="${v("drinkTo")}"></label>
@@ -541,6 +584,8 @@ function readForm(){
   FIELDS.forEach(k=>out[k]=g(k));
   out.bottles=Math.max(0,num(g("bottles"))||0);
   out.wishlist=!!f.elements.wishlist?.checked;
+  out.extRating=out.extRating.replace(",",".");
+  if(!out.extRating){ out.extSource=""; out.extUrl=""; }
   const cats=[...f.querySelectorAll('input[name="pc"]:checked')].map(i=>i.value);
   out.pairings=[...cats, ...g("pairings").split(",").map(s=>s.trim()).filter(s=>s && !PAIR_NAMES.includes(s))];
   out.profile={}; PROFILE.forEach(([k])=>{const n=Number(g("p-"+k)); if(n>0) out.profile[k]=n;});
@@ -570,6 +615,8 @@ function fillForm(info){
   const set=(n,v)=>{ const el=f.elements[n]; if(el && v!=null && v!=="" && !el.value) el.value=v; };
   ["producer","name","vintage","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description"].forEach(k=>set(k,info[k]!=null?String(info[k]):""));
   if(info.color && COLORS[info.color] && !f.elements.color.value) f.elements.color.value=info.color;
+  const rt=ratingFromInfo(info.extRating);
+  if(rt && !f.elements.extRating.value){ f.elements.extRating.value=rt.extRating; f.elements.extScale.value=["5","20","100"].includes(rt.extScale)?rt.extScale:"5"; f.elements.extSource.value=rt.extSource; f.elements.extUrl.value=rt.extUrl; draft.extCount=rt.extCount; }
   if(Array.isArray(info.pairings) && info.pairings.length){
     const cats=pairCats({pairings:info.pairings});
     f.querySelectorAll('input[name="pc"]').forEach(i=>{ if(cats.includes(i.value)) i.checked=true; });
@@ -606,7 +653,15 @@ async function handlePhoto(file){
     fillForm(data||{});
     const links=(data?.sources||[]).filter(s=>s?.url).slice(0,5).map(s=>`${(s.title||"").replace(/\|/g,"-")} | ${s.url}`);
     draft.source=["Vom Etikett gelesen und im Internet ergänzt"+(data?.confidence?` (Sicherheit: ${data.confidence})`:"")+".",...links].join("\n");
-    status(`<div class="status"><span>Angaben ergänzt${data?.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Bitte kurz prüfen und speichern.</span></div>`);
+    if(data?.labelReadable===false){
+      draft.source="";
+      status(`<div class="status err">Auf dem Foto ist kein lesbares Etikett zu erkennen. Mach am besten ein schärferes Foto von vorne, ohne Spiegelung, oder trage die Angaben von Hand ein. Das Foto wird trotzdem gespeichert.</div>`);
+    } else if(data?.foundOnline===false){
+      draft.source="Nur vom Etikett gelesen, im Internet nicht gefunden.";
+      status(`<div class="status err">Diesen Wein habe ich im Internet nicht gefunden. Übernommen sind nur die Angaben vom Etikett. Ergänze den Rest bei Bedarf von Hand; du kannst das später auch jederzeit nachholen.</div>`);
+    } else {
+      status(`<div class="status"><span>Angaben ergänzt${data?.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Bitte kurz prüfen und speichern.</span></div>`);
+    }
   }catch(e){
     status(`<div class="status err">Das Etikett konnte nicht automatisch ausgewertet werden (${esc(e.message||"unbekannter Fehler")}). Du kannst die Angaben von Hand eintragen; das Foto wird trotzdem gespeichert.</div>`);
   }
