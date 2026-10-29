@@ -29,6 +29,10 @@ create table if not exists public.wines (
   updated_at   timestamptz default now()
 );
 
+-- Wunschliste (ab Version mit Wunschliste)
+alter table public.wines add column if not exists wishlist boolean not null default false;
+alter table public.wines add column if not exists wish_note text default '';
+
 alter table public.wines enable row level security;
 
 drop policy if exists "eigene Weine lesen" on public.wines;

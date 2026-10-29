@@ -61,6 +61,8 @@ Ablauf beim Erfassen: Foto → im Browser auf max. 1400 px verkleinert → Uploa
 | `rating` | int | eigene Sterne 0–5 | `rating` |
 | `bottles` | int ≥ 0 | Flaschen im Keller | `bottles` |
 | `photo_path` | text | Pfad im Bucket `wine-photos` | `photoPath` |
+| `wishlist` | boolean, default false | `true` = auf der Wunschliste (noch nicht gekauft) | `wishlist` |
+| `wish_note` | text | Wo getrunken / wo erhältlich | `wishNote` |
 | `created_at`, `updated_at` | timestamptz | `updated_at` per Trigger `wines_touch` | |
 
 **Zugriffsregeln (RLS):** Jede Person liest, erstellt, ändert und löscht nur Zeilen mit `user_id = auth.uid()`.
@@ -93,6 +95,7 @@ Alles steckt in einer Funktion am Ende der Datei. Wichtige Teile, in dieser Reih
 | Konstanten | `COLORS` (Weinarten), `PROFILE` (4 Geschmacksregler), `PAIRINGS` (11 Speise-Gruppen mit Stichworten), `FIELDS` (Textfelder des Formulars), `BUCKET` |
 | Speise-Gruppen | `pairCats(w)`: ausdrücklich gewählte Gruppen in `pairings`, sonst aus Stichworten abgeleitet (z. B. „Kalbfleisch“ → Weisses Fleisch & Geflügel); `pairFilter`, `renderPairSelect()` |
 | Datenbank | `toRow(w)` App → Spalten, `fromRow(r)` Spalten → App, `loadWines()`, `saveWine(w)`, `uploadPhoto(blob)`, `refreshPhotoUrls()` |
+| Ansichten | `view` ("keller" / "wunsch", gemerkt im Browser), `inView(w)`, `setView(v)`, `renderViews()`, `newDefaults()`; Knöpfe `data-buy` (Gekauft → Keller, min. 1 Flasche) und `data-towish` (ausgetrunkener Wein → Wunschliste) |
 | Liste | `renderChips()`, `renderStats()`, `matches(w)` (Suche/Filter), `renderList()`, `setBottles(id, n)` |
 | Details | `openDetail(id)`, `windowHtml(w)` (Trinkfenster), `profileHtml(p)`, `sourcesHtml(src)` |
 | Formular | `formHtml(w)`, `readForm()`, `openForm(w)`, `fillForm(info)` (übernimmt Erkennungsergebnis, überschreibt keine bereits ausgefüllten Felder) |
@@ -137,4 +140,4 @@ Bestehende Daten bleiben bei App-Änderungen immer erhalten. Vor grösseren Date
 - Nur ein Benutzerkonto vorgesehen (Registrierung geschlossen).
 - Keine Offline-Nutzung (kein Service Worker).
 - Supabase-Gratis-Plan: 500 MB Datenbank, 1 GB Fotos, 2 aktive Projekte pro Konto.
-- Ideen: Lagerort, Wunschliste, Statistik nach Region/Jahrgang, Erinnerung bei Trinkfenster-Ende, Kaufpreis und Kaufort, Verkostungsnotizen mit Datum.
+- Ideen: Lagerort, Statistik nach Region/Jahrgang, Erinnerung bei Trinkfenster-Ende, Kaufpreis und Kaufort, Verkostungsnotizen mit Datum.

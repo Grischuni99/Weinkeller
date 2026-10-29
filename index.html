@@ -160,6 +160,16 @@ img{max-width:100%}
 .pair-filter{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--muted)}
 .pair-filter select{flex:1;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:var(--r);padding:8px 10px;font-size:14px;font-weight:500}
 .tag-cat{border:1px solid var(--wine);background:var(--wine-soft);color:var(--wine);font-weight:600;cursor:pointer}
+.views{display:grid;grid-template-columns:1fr 1fr;background:var(--sunk);border-radius:12px;padding:4px;gap:4px}
+.views button{border:0;background:transparent;border-radius:9px;padding:9px 10px;font-weight:600;font-size:14px;color:var(--muted);display:flex;align-items:center;justify-content:center;gap:8px}
+.views button span{font-family:var(--f-data);font-size:12px;font-weight:500;font-variant-numeric:tabular-nums;background:var(--bg);color:var(--muted);border-radius:999px;padding:1px 8px}
+.views button[aria-selected="true"]{background:var(--surface);color:var(--fg);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.views button[aria-selected="true"] span{background:var(--wine-soft);color:var(--wine)}
+.btn.buy{padding:8px 14px;font-size:13px;border-color:var(--wine);color:var(--wine);white-space:nowrap}
+.wish-note{font-size:13px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill.wish{background:var(--wine-soft);color:var(--wine)}
+.wish-toggle{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;cursor:pointer}
+.wish-toggle input{width:20px;height:20px;accent-color:var(--wine);margin:0}
 fieldset.pair-pick{border:0;padding:0;margin:0;min-width:0}
 fieldset.pair-pick legend{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.03em;padding:0;margin-bottom:6px}
 .chip-check{position:relative;display:inline-flex}
@@ -221,6 +231,7 @@ fieldset.pair-pick legend{font-size:12px;font-weight:600;color:var(--muted);lett
 
 <main class="wrap">
   <div class="tools">
+    <div class="views" role="tablist" aria-label="Ansicht" id="views"></div>
     <input class="search" id="q" type="search" placeholder="Suchen: Weingut, Wein, Rebsorte, Region …" aria-label="Suchen">
     <div class="chips" id="chips"></div>
     <label class="pair-filter" for="pairSel"><span>Passt zu</span>
@@ -269,7 +280,15 @@ function pairCats(w){
   return PAIR_NAMES.filter(n=>out.has(n));
 }
 let pairFilter="";
-const FIELDS = ["producer","name","vintage","color","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description","notes"];
+let view="keller";
+try{ if(localStorage.getItem("wk-view")==="wunsch") view="wunsch"; }catch{}
+const inView = w => !!w.wishlist === (view==="wunsch");
+function setView(v){
+  view=v; try{ localStorage.setItem("wk-view",v); }catch{}
+  if(view==="wunsch" && filter==="vorrat") filter="alle";
+  renderChips(); renderList();
+}
+const FIELDS = ["producer","name","vintage","color","grape","appellation","region","country","alcohol","volume","price","drinkFrom","drinkTo","description","notes","wishNote"];
 let loading=false, sb=null, user=null, wines=[], photoUrls={}, filter="alle", query="", loaded=false;
 const pending = {};
 const $ = s => document.querySelector(s);
@@ -284,12 +303,13 @@ const toRow = w => ({
   appellation:w.appellation||"", region:w.region||"", country:w.country||"", alcohol:w.alcohol||"", volume:w.volume||"",
   price:w.price||"", drink_from:w.drinkFrom||"", drink_to:w.drinkTo||"", profile:w.profile||{}, pairings:w.pairings||[],
   description:w.description||"", source:w.source||"", notes:w.notes||"", rating:num(w.rating)||0,
-  bottles:Math.max(0,num(w.bottles)||0), photo_path:w.photoPath||null
+  bottles:Math.max(0,num(w.bottles)||0), photo_path:w.photoPath||null,
+  wishlist:!!w.wishlist, wish_note:w.wishNote||""
 });
 const fromRow = r => ({ id:r.id, producer:r.producer, name:r.name, vintage:r.vintage, color:r.color, grape:r.grape,
   appellation:r.appellation, region:r.region, country:r.country, alcohol:r.alcohol, volume:r.volume, price:r.price,
   drinkFrom:r.drink_from, drinkTo:r.drink_to, profile:r.profile||{}, pairings:r.pairings||[], description:r.description,
-  source:r.source, notes:r.notes, rating:r.rating, bottles:r.bottles, photoPath:r.photo_path, createdAt:r.created_at });
+  source:r.source, notes:r.notes, rating:r.rating, bottles:r.bottles, photoPath:r.photo_path, createdAt:r.created_at, wishlist:!!r.wishlist, wishNote:r.wish_note||"" });
 
 async function loadWines(){
   const {data,error} = await sb.from("wines").select("*");
@@ -332,51 +352,61 @@ function windowStatus(w){
 }
 
 /* ---------- Liste ---------- */
+function renderViews(){
+  const k=wines.filter(w=>!w.wishlist).length, wl=wines.filter(w=>w.wishlist).length;
+  $("#views").innerHTML=`<button type="button" role="tab" data-view="keller" aria-selected="${view==="keller"}">Keller<span>${k}</span></button><button type="button" role="tab" data-view="wunsch" aria-selected="${view==="wunsch"}">Wunschliste<span>${wl}</span></button>`;
+}
 function renderChips(){
-  const opts=[["alle","Alle"],["vorrat","Im Keller"],...Object.entries(COLORS).map(([k,v])=>[k,v.label])];
+  const opts=[["alle","Alle"],...(view==="keller"?[["vorrat","Im Keller"]]:[]),...Object.entries(COLORS).map(([k,v])=>[k,v.label])];
   $("#chips").innerHTML = opts.map(([k,l])=>`<button class="chip" type="button" data-f="${k}" aria-pressed="${filter===k}">${l}</button>`).join("");
 }
 function renderPairSelect(){
   const sel=$("#pairSel"); if(!sel) return;
-  const counts={}; wines.forEach(w=>pairCats(w).forEach(c=>counts[c]=(counts[c]||0)+1));
+  const counts={}; wines.filter(inView).forEach(w=>pairCats(w).forEach(c=>counts[c]=(counts[c]||0)+1));
   sel.innerHTML=`<option value="">alle Speisen</option>`+PAIR_NAMES.map(n=>`<option value="${esc(n)}" ${pairFilter===n?"selected":""}>${esc(n)} (${counts[n]||0})</option>`).join("");
   sel.value=pairFilter;
 }
 function renderStats(){
   if(!loaded) return;
-  const bottles = wines.reduce((s,w)=>s+(num(w.bottles)||0),0);
-  const ready = wines.filter(w=>(num(w.bottles)||0)>0 && windowStatus(w)?.cls==="ok").length;
-  $("#stats").textContent = `${bottles} ${bottles===1?"Flasche":"Flaschen"} · ${wines.length} ${wines.length===1?"Wein":"Weine"} · ${ready} trinkreif`;
+  if(view==="wunsch"){ const n=wines.filter(w=>w.wishlist).length; $("#stats").textContent=`${n} ${n===1?"Wein":"Weine"} auf der Wunschliste`; return; }
+  const cellar=wines.filter(w=>!w.wishlist);
+  const bottles = cellar.reduce((s,w)=>s+(num(w.bottles)||0),0);
+  const ready = cellar.filter(w=>(num(w.bottles)||0)>0 && windowStatus(w)?.cls==="ok").length;
+  $("#stats").textContent = `${bottles} ${bottles===1?"Flasche":"Flaschen"} · ${cellar.length} ${cellar.length===1?"Wein":"Weine"} · ${ready} trinkreif`;
 }
 function matches(w){
+  if(!inView(w)) return false;
   if(filter==="vorrat" && !(num(w.bottles)>0)) return false;
   if(COLORS[filter] && w.color!==filter) return false;
   if(pairFilter && !pairCats(w).includes(pairFilter)) return false;
   if(!query) return true;
-  const hay=[w.producer,w.name,w.grape,w.region,w.country,w.appellation,w.vintage,...(w.pairings||[])].join(" ").toLowerCase();
+  const hay=[w.producer,w.name,w.grape,w.region,w.country,w.appellation,w.vintage,...(w.pairings||[]),w.wishNote].join(" ").toLowerCase();
   return query.toLowerCase().split(/\s+/).every(t=>hay.includes(t));
 }
+const emptyWish = `<div class="empty-state"><h2>Deine Wunschliste ist leer</h2><p>Hat dir ein Wein bei Freunden oder im Restaurant geschmeckt? Tippe auf <strong>Foto</strong> und fotografiere das Etikett. Er landet dann hier, bis du ihn kaufst.</p></div>`;
 const emptyHtml = `<div class="empty-state"><h2>Dein Keller ist noch leer</h2><p>Tippe auf <strong>Foto</strong> und fotografiere ein Etikett. Die Angaben werden danach automatisch ergänzt.<br>Oder lies im Menü ein Backup ein.</p></div>`;
 function renderList(){
-  renderStats(); renderPairSelect();
+  renderStats(); renderPairSelect(); if(loaded) renderViews();
   if(!loaded) return;
   const items = wines.filter(matches).sort((a,b)=>(a.producer||"").localeCompare(b.producer||"","de")||(a.name||"").localeCompare(b.name||"","de")||(num(a.vintage)||0)-(num(b.vintage)||0));
-  if(!wines.length){ $("#list").innerHTML=emptyHtml; return; }
+  if(!wines.filter(inView).length){ $("#list").innerHTML= view==="wunsch"?emptyWish:emptyHtml; return; }
   if(!items.length){ $("#list").innerHTML=`<div class="empty-state"><h2>Nichts gefunden</h2><p>Kein Wein passt zu dieser Suche oder diesem Filter.</p></div>`; return; }
   $("#list").innerHTML = items.map(w=>{
     const st=windowStatus(w), col=COLORS[w.color], n=num(w.bottles)||0, src=photoSrc(w);
-    return `<div class="row${n?"":" zero"}">
+    const wish=!!w.wishlist;
+    return `<div class="row${n||wish?"":" zero"}">
       ${src?`<button class="thumb" data-open="${esc(w.id)}" aria-label="Details"><img class="thumb" src="${esc(src)}" alt="" loading="lazy"></button>`:`<button class="thumb empty" data-open="${esc(w.id)}" aria-label="Details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M9 2h6v5c0 1 2 2 2 5v9a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1v-9c0-3 2-4 2-5z"/></svg></button>`}
       <button class="row-main" data-open="${esc(w.id)}">
         <div class="producer">${esc(w.producer||"Unbekanntes Weingut")}</div>
         <div class="wname">${esc(w.name||"Ohne Namen")}${w.vintage?" "+esc(w.vintage):""}</div>
-        <div class="meta">${col?`<span><span class="dot" style="background:${col.c}"></span>${col.label}</span>`:""}${w.grape?`<span>${esc(w.grape)}</span>`:""}${w.region?`<span>${esc(w.region)}</span>`:""}${st?`<span class="pill ${st.cls}">${st.txt}</span>`:""}</div>
+        <div class="meta">${col?`<span><span class="dot" style="background:${col.c}"></span>${col.label}</span>`:""}${w.grape?`<span>${esc(w.grape)}</span>`:""}${w.region?`<span>${esc(w.region)}</span>`:""}${!wish&&st?`<span class="pill ${st.cls}">${st.txt}</span>`:""}</div>
+        ${wish&&w.wishNote?`<div class="wish-note">${esc(w.wishNote)}</div>`:""}
       </button>
-      <div class="counter" aria-label="Flaschen">
+      ${wish?`<button class="btn buy" type="button" data-buy="${esc(w.id)}">Gekauft</button>`:`<div class="counter" aria-label="Flaschen">
         <button type="button" data-dec="${esc(w.id)}" ${n?"":"disabled"} aria-label="Eine Flasche weniger">−</button>
         <output>${n}</output>
         <button type="button" data-inc="${esc(w.id)}" aria-label="Eine Flasche mehr">+</button>
-      </div></div>`;
+      </div>`}</div>`;
   }).join("");
 }
 function setBottles(id, n){
@@ -418,30 +448,33 @@ function sourcesHtml(src){
 function openDetail(id){
   const w=wines.find(x=>x.id===id); if(!w) return;
   const col=COLORS[w.color], src=photoSrc(w), r=num(w.rating)||0;
-  const facts=[["Weingut",w.producer],["Jahrgang",w.vintage],["Weinart",col?.label],["Rebsorte",w.grape],["Region",[w.region,w.country].filter(Boolean).join(", ")],["Appellation",w.appellation],["Alkohol",w.alcohol?w.alcohol+" % vol":""],["Flasche",w.volume?w.volume+" cl":""],["Preis",w.price]].filter(f=>f[1]);
+  const facts=[["Weingut",w.producer],["Jahrgang",w.vintage],["Weinart",col?.label],["Rebsorte",w.grape],["Region",[w.region,w.country].filter(Boolean).join(", ")],["Appellation",w.appellation],["Alkohol",w.alcohol?w.alcohol+" % vol":""],["Flasche",w.volume?w.volume+" cl":""],["Preis",w.price],["Wo getrunken / erhältlich",w.wishNote]].filter(f=>f[1]);
+  const wish=!!w.wishlist;
   openSheet(`
     <div class="sheet-top"><span class="sub">${esc(w.producer||"")}</span><button class="x" type="button" data-close aria-label="Schliessen">×</button></div>
     <div class="detail-hero">
       ${src?`<img src="${esc(src)}" alt="Etikett">`:`<div class="ph">kein Foto</div>`}
       <div>
         <h2 class="big">${esc(w.name||"Ohne Namen")}${w.vintage?" "+esc(w.vintage):""}</h2>
-        <div class="counter" style="display:inline-flex" aria-label="Flaschen im Keller">
+        ${wish?`<span class="pill wish">Auf der Wunschliste</span>
+        <div style="margin-top:10px"><button class="btn primary" type="button" data-buy="${esc(w.id)}">Gekauft – in den Keller</button></div>`:`<div class="counter" style="display:inline-flex" aria-label="Flaschen im Keller">
           <button type="button" data-dec="${esc(w.id)}" ${num(w.bottles)?"":"disabled"} aria-label="Eine Flasche weniger">−</button>
           <output>${num(w.bottles)||0}</output>
           <button type="button" data-inc="${esc(w.id)}" aria-label="Eine Flasche mehr">+</button>
         </div> <span class="sub" style="margin-left:6px">Flaschen im Keller</span>
+        ${num(w.bottles)?"":`<div style="margin-top:10px"><button class="btn" type="button" data-towish="${esc(w.id)}">Auf die Wunschliste</button></div>`}`}
         <div class="section" style="border:0;padding-top:0;margin-top:14px"><h3>Meine Bewertung</h3>
           <div class="stars">${[1,2,3,4,5].map(i=>`<button type="button" data-rate="${i}" class="${i<=r?"on":""}" aria-label="${i} Sterne">★</button>`).join("")}</div></div>
       </div>
     </div>
     <dl class="facts">${facts.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
-    ${windowHtml(w)}
+    ${wish?"":windowHtml(w)}
     ${profileHtml(w.profile)}
     ${w.pairings?.length?`<div class="section"><h3>Passt zu</h3><div class="tags">${pairCats(w).map(c=>`<button type="button" class="tag tag-cat" data-pair="${esc(c)}">${esc(c)}</button>`).join("")}${w.pairings.filter(p=>!PAIR_NAMES.includes(p)).map(p=>`<span class="tag">${esc(p)}</span>`).join("")}</div></div>`:""}
     ${w.description?`<div class="section"><h3>Über den Wein</h3><p class="prose">${esc(w.description)}</p>${sourcesHtml(w.source)}</div>`:""}
     ${w.notes?`<div class="section"><h3>Meine Notizen</h3><p class="prose">${esc(w.notes)}</p></div>`:""}
     <div class="actions"><button class="btn" type="button" data-edit="${esc(w.id)}">Bearbeiten</button><button class="btn danger" type="button" id="btnDel">Wein entfernen</button></div>
-    <div id="delConfirm" hidden class="status err" style="margin-top:12px;flex-wrap:wrap"><span style="flex:1;min-width:12em">Diesen Wein endgültig aus dem Keller entfernen?</span><button class="btn danger" type="button" data-del="${esc(w.id)}">Entfernen</button><button class="btn ghost" type="button" id="btnDelNo">Abbrechen</button></div>
+    <div id="delConfirm" hidden class="status err" style="margin-top:12px;flex-wrap:wrap"><span style="flex:1;min-width:12em">Diesen Wein endgültig entfernen?</span><button class="btn danger" type="button" data-del="${esc(w.id)}">Entfernen</button><button class="btn ghost" type="button" id="btnDelNo">Abbrechen</button></div>
   `);
   $("#btnDel").onclick=()=>{$("#delConfirm").hidden=false;};
   $("#btnDelNo").onclick=()=>{$("#delConfirm").hidden=true;};
@@ -453,6 +486,7 @@ function openDetail(id){
 }
 
 /* ---------- Formular ---------- */
+const newDefaults = () => view==="wunsch" ? {bottles:0, wishlist:true} : {bottles:1, wishlist:false};
 let draft=null;
 function formHtml(w, busy){
   const p=w.profile||{}, v=k=>esc(w[k]??""), src=photoSrc(w);
@@ -469,6 +503,10 @@ function formHtml(w, busy){
       <label class="f">Jahrgang<input id="f-vintage" name="vintage" inputmode="numeric" value="${v("vintage")}"></label>
       <label class="f">Weinart<select id="f-color" name="color"><option value="">–</option>${Object.entries(COLORS).map(([k,c])=>`<option value="${k}" ${w.color===k?"selected":""}>${c.label}</option>`).join("")}</select></label>
       <label class="f">Flaschen<input id="f-bottles" name="bottles" type="number" min="0" inputmode="numeric" value="${esc(w.bottles??1)}"></label>
+    </div>
+    <label class="wish-toggle"><input type="checkbox" id="f-wishlist" name="wishlist" ${w.wishlist?"checked":""}><span>Auf der Wunschliste (noch nicht gekauft)</span></label>
+    <label class="f" id="wishNoteWrap" ${w.wishlist?"":"hidden"}>Wo getrunken / wo erhältlich<input id="f-wishNote" name="wishNote" placeholder="z. B. Restaurant Krone, Weinhandlung Müller CHF 28" value="${v("wishNote")}"></label>
+    <div hidden>
     </div>
     <div class="grid2">
       <label class="f">Rebsorte(n)<input id="f-grape" name="grape" value="${v("grape")}"></label>
@@ -502,6 +540,7 @@ function readForm(){
   const f=$("#wineForm"), g=n=>f.elements[n]?.value.trim()||"", out={};
   FIELDS.forEach(k=>out[k]=g(k));
   out.bottles=Math.max(0,num(g("bottles"))||0);
+  out.wishlist=!!f.elements.wishlist?.checked;
   const cats=[...f.querySelectorAll('input[name="pc"]:checked')].map(i=>i.value);
   out.pairings=[...cats, ...g("pairings").split(",").map(s=>s.trim()).filter(s=>s && !PAIR_NAMES.includes(s))];
   out.profile={}; PROFILE.forEach(([k])=>{const n=Number(g("p-"+k)); if(n>0) out.profile[k]=n;});
@@ -510,6 +549,7 @@ function readForm(){
 function openForm(w, busy){
   draft={...w};
   openSheet(formHtml(draft, busy));
+  $("#f-wishlist").addEventListener("change",e=>{ $("#wishNoteWrap").hidden=!e.target.checked; const b=$("#f-bottles"); if(e.target.checked && b.value==="1") b.value="0"; else if(!e.target.checked && b.value==="0") b.value="1"; });
   $("#wineForm").addEventListener("submit", async e=>{
     e.preventDefault();
     const data={...draft, ...readForm()};
@@ -520,7 +560,8 @@ function openForm(w, busy){
       delete data.photoBlob; delete data.localPreview;
       const saved = await saveWine(data);
       const i = wines.findIndex(x=>x.id===saved.id); if(i>=0) wines[i]=saved; else wines.push(saved);
-      closeSheet(); renderList(); toast(draft.id?"Gespeichert":"Im Keller gespeichert");
+      closeSheet(); if(!!saved.wishlist!==(view==="wunsch")) setView(saved.wishlist?"wunsch":"keller"); else renderList();
+      toast(draft.id?"Gespeichert":(saved.wishlist?"Auf die Wunschliste gesetzt":"Im Keller gespeichert"));
     }catch(err){ $("#btnSave").disabled=false; $("#btnSave").textContent="Im Keller speichern"; toast("Speichern fehlgeschlagen: "+(err.message||"bitte nochmals versuchen")); }
   });
 }
@@ -554,7 +595,7 @@ const blobToDataUrl = b => new Promise((res,rej)=>{ const r=new FileReader(); r.
 async function handlePhoto(file){
   let blob; try{ blob=await resize(file,1400,.85); }catch{ blob=file; }
   const preview = URL.createObjectURL(blob);
-  openForm({bottles:1, photoBlob:blob, localPreview:preview},
+  openForm({...newDefaults(), photoBlob:blob, localPreview:preview},
     `<div class="status"><span class="spin"></span><span>Etikett wird gelesen und im Internet nachgeschlagen. Das dauert etwa 20–40 Sekunden …</span></div>`);
   const status=t=>{ const s=$("#aiStatus"); if(s) s.innerHTML=t; };
   try{
@@ -607,6 +648,15 @@ document.addEventListener("click",e=>{
   if(!e.target.closest(".menu")) $("#menuPop").hidden=true;
   if(!t) return;
   if(t.dataset.f){ filter=t.dataset.f; renderChips(); renderList(); return; }
+  if(t.dataset.view){ setView(t.dataset.view); return; }
+  if(t.dataset.buy||t.dataset.towish){
+    const id=t.dataset.buy||t.dataset.towish, w=wines.find(x=>x.id===id); if(!w) return;
+    const patch = t.dataset.buy ? {wishlist:false, bottles:Math.max(1,num(w.bottles)||0)} : {wishlist:true};
+    sb.from("wines").update(patch).eq("id",id).then(({error})=>{
+      if(error){ toast("Speichern fehlgeschlagen. Bitte nochmals versuchen."); return; }
+      Object.assign(w, patch); closeSheet(); renderList();
+      toast(t.dataset.buy ? `In den Keller verschoben (${w.bottles} ${w.bottles===1?"Flasche":"Flaschen"}). Anzahl im Keller mit + anpassen.` : "Auf die Wunschliste gesetzt");
+    }); return; }
   if(t.dataset.pair){ pairFilter=t.dataset.pair; closeSheet(); renderList(); window.scrollTo({top:0,behavior:"smooth"}); toast("Gefiltert: passt zu "+pairFilter); return; }
   if(t.dataset.inc||t.dataset.dec){ const id=t.dataset.inc||t.dataset.dec; const w=wines.find(x=>x.id===id); setBottles(id,(num(w.bottles)||0)+(t.dataset.inc?1:-1)); if($(".sheet")&&!$("#wineForm")) openDetail(id); return; }
   if(t.dataset.open){ openDetail(t.dataset.open); return; }
@@ -622,7 +672,7 @@ $("#q").addEventListener("input",e=>{ query=e.target.value.trim(); renderList();
 $("#pairSel").addEventListener("change",e=>{ pairFilter=e.target.value; renderList(); });
 $("#btnPhoto").onclick=()=>$("#fileInput").click();
 $("#btnMenu").onclick=()=>{ const p=$("#menuPop"); p.hidden=!p.hidden; $("#btnMenu").setAttribute("aria-expanded",String(!p.hidden)); };
-$("#mManual").onclick=()=>{ $("#menuPop").hidden=true; openForm({bottles:1}); };
+$("#mManual").onclick=()=>{ $("#menuPop").hidden=true; openForm(newDefaults()); };
 $("#mExport").onclick=()=>{ $("#menuPop").hidden=true; exportBackup(); };
 $("#mImport").onclick=()=>{ $("#menuPop").hidden=true; $("#importInput").click(); };
 $("#mLogout").onclick=async()=>{ $("#menuPop").hidden=true; await sb.auth.signOut(); };
