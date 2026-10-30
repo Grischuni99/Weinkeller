@@ -13,10 +13,12 @@ Diese Notiz beschreibt, wie die App aufgebaut ist, damit sie später (auch in ei
 |---|---|---|
 | App (Oberfläche) | GitHub Pages: https://grischuni99.github.io/Weinkeller/ | Eine einzige Seite `index.html`, läuft im Browser und auf dem Handy-Home-Bildschirm |
 | Daten | Supabase-Projekt „Weinkeller“ (Ref `aqujdwzerevsuwfixjsu`, Region eu-west-1, Gratis-Plan) | Tabelle `wines`, Foto-Speicher `wine-photos`, Anmeldung |
-| Etikett-Erkennung | Supabase Edge Function `analyze-label` | Schickt das Foto an die Claude API mit Websuche, liefert JSON zurück (inkl. `extRating`, `foundOnline`, `labelReadable`). Mit `{mode:"rating", wine:{…}}` sucht sie nur die Bewertung eines bestehenden Weins |
+| Etikett-Erkennung | Supabase Edge Function `analyze-label` | Nur für angemeldete Benutzer (prüft das Login über `/auth/v1/user`). Modell `claude-haiku-5-5` (Secret `CLAUDE_MODEL` überschreibt). Modi: `label` (Foto lesen, **ohne** Internetsuche), `enrich` (Internetsuche auf Knopfdruck, max. 2 Suchen, Secret `MAX_SEARCHES`), `rating` (nur Bewertung) |
 | Wach halten | GitHub Action `.github/workflows/keep-alive.yml` | Ruft alle 3 Tage `rpc/ping` auf, damit Supabase nicht pausiert; committet alle ~45 Tage `.keepalive`, damit GitHub die Aufgabe nicht abschaltet |
 
-Ablauf beim Erfassen: Foto → im Browser auf max. 1400 px verkleinert → Upload nach `wine-photos/<user-id>/<uuid>.jpg` → `functions.invoke("analyze-label")` → Formular wird vorausgefüllt → Benutzer prüft → Speichern in `wines`.
+Ablauf beim Erfassen: Foto → im Browser auf max. 1400 px verkleinert → `analyze-label` mode `label` liest nur das Etikett → Formular wird vorausgefüllt → optional Knopf „Im Internet ergänzen“ (mode `enrich`, füllt nur leere Felder) → Speichern (Foto-Upload nach `wine-photos/<user-id>/<uuid>.jpg`, Zeile in `wines`).
+
+**Kosten:** Am 29.10.2026 kostete die alte Variante (Sonnet, immer Internetsuche, bis 5 Suchen) rund 0,18 $ pro Wein. Seit 30.10.2026: Internetsuche nur auf Knopfdruck, Haiku, max. 2 Suchen. Websuche kostet 0,01 $ pro Suche plus Tokens für die gelesenen Seiten. Automatisches Aufladen bei Anthropic ist bewusst ausgeschaltet.
 
 ---
 
@@ -87,7 +89,7 @@ Gibt `'ok'` zurück, für die Wach-halten-Aufgabe (anon darf sie aufrufen, gibt 
 - **Edge Functions → Secrets:** `ANTHROPIC_API_KEY` (Claude API). Optional `CLAUDE_MODEL` (Standard `claude-sonnet-5-5`).
 - **API-Keys:** Die App nutzt den Legacy-**anon**-Key (JWT). Der service_role-Key wird nirgends verwendet.
 
-Claude API: Konto auf platform.claude.com („Daniel’s Individual Org“), Guthaben ohne automatisches Aufladen. Websuche `web_search_20250305`, max. 4 Suchen pro Etikett.
+Claude API: Konto auf platform.claude.com („Daniel’s Individual Org“), API-Schlüssel „Weinkeller“, Guthaben ohne automatisches Aufladen. Verbrauch: platform.claude.com → Kosten. Websuche `web_search_20250305`.
 
 ---
 
@@ -104,7 +106,7 @@ Alles steckt in einer Funktion am Ende der Datei. Wichtige Teile, in dieser Reih
 | Liste | `renderChips()`, `renderStats()`, `matches(w)` (Suche/Filter), `renderList()`, `setBottles(id, n)` |
 | Details | `openDetail(id)`, `windowHtml(w)` (Trinkfenster), `profileHtml(p)`, `sourcesHtml(src)` |
 | Formular | `formHtml(w)`, `readForm()`, `openForm(w)`, `fillForm(info)` (übernimmt Erkennungsergebnis, überschreibt keine bereits ausgefüllten Felder) |
-| Foto & Erkennung | `resize()`, `handlePhoto(file)` (Meldung, wenn Etikett unlesbar oder Wein online nicht gefunden) |
+| Foto & Erkennung | `resize()`, `callFn(body)`, `handlePhoto(file)` (nur Etikett), `enrichForm()` (Knopf `#btnEnrich`, Internetsuche), `setStatus()` |
 | Bewertung | `ratingText(w)`, `ratingBadge(w)`, `ratingFromInfo(x)`, `lookupRating(w, btn)` (Knopf „Bewertung suchen“ in den Details) |
 | Backup | `exportBackup()` (JSON inkl. Fotos als data-URL), `importBackup(file)` (überspringt gleiche Weingut+Name+Jahrgang) |
 | Anmeldung | `auth("login"/"signup")`, `onSession(session)` |

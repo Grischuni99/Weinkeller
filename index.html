@@ -167,6 +167,7 @@ img{max-width:100%}
 .views button[aria-selected="true"] span{background:var(--wine-soft);color:var(--wine)}
 .btn.buy{padding:8px 14px;font-size:13px;border-color:var(--wine);color:var(--wine);white-space:nowrap}
 .wish-note{font-size:13px;color:var(--muted);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status-col{flex-direction:column;align-items:flex-start;gap:10px}
 .pill.ext{background:var(--sunk);color:var(--fg)}
 .facts a,.prose a{color:var(--wine)}
 .pill.wish{background:var(--wine-soft);color:var(--wine)}
@@ -529,7 +530,7 @@ function formHtml(w, busy){
   const p=w.profile||{}, v=k=>esc(w[k]??""), src=photoSrc(w);
   return `
   <div class="sheet-top"><h2 class="big" style="margin:0;font-size:24px">${w.id?"Wein bearbeiten":"Neuer Wein"}</h2><button class="x" type="button" data-close aria-label="Schliessen">×</button></div>
-  <div id="aiStatus" style="margin-bottom:12px">${busy||""}</div>
+  <div id="aiStatus" style="margin-bottom:12px">${busy||(w.id&&!w.description?`<div class="status status-col"><span>Fehlen Angaben? Lass den Wein im Internet ergänzen (kostet etwas Guthaben).</span>${enrichBtn}</div>`:"")}</div>
   <form id="wineForm" novalidate>
     ${src?`<img class="preview-img" src="${esc(src)}" alt="Etikett">`:""}
     <div class="grid2">
@@ -594,6 +595,7 @@ function readForm(){
 function openForm(w, busy){
   draft={...w};
   openSheet(formHtml(draft, busy));
+  bindEnrich();
   $("#f-wishlist").addEventListener("change",e=>{ $("#wishNoteWrap").hidden=!e.target.checked; const b=$("#f-bottles"); if(e.target.checked && b.value==="1") b.value="0"; else if(!e.target.checked && b.value==="0") b.value="1"; });
   $("#wineForm").addEventListener("submit", async e=>{
     e.preventDefault();
@@ -639,31 +641,58 @@ function resize(file, max, q){
 const blobToBase64 = b => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result).split(",")[1]); r.onerror=rej; r.readAsDataURL(b); });
 const blobToDataUrl = b => new Promise((res,rej)=>{ const r=new FileReader(); r.onload=()=>res(String(r.result)); r.onerror=rej; r.readAsDataURL(b); });
 
+async function callFn(body){
+  const {data,error} = await sb.functions.invoke("analyze-label",{body});
+  if(error){ let msg=error.message; try{ const j=await error.context?.json?.(); if(j?.error) msg=j.error; }catch{} throw new Error(msg); }
+  if(data?.error) throw new Error(data.error);
+  return data||{};
+}
+const enrichBtn = `<button class="btn" type="button" id="btnEnrich"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Im Internet ergänzen</button>`;
+function setStatus(t){ const s=$("#aiStatus"); if(s) s.innerHTML=t; }
+function bindEnrich(){ const b=$("#btnEnrich"); if(b) b.onclick=enrichForm; }
+
 async function handlePhoto(file){
   let blob; try{ blob=await resize(file,1400,.85); }catch{ blob=file; }
   const preview = URL.createObjectURL(blob);
   openForm({...newDefaults(), photoBlob:blob, localPreview:preview},
-    `<div class="status"><span class="spin"></span><span>Etikett wird gelesen und im Internet nachgeschlagen. Das dauert etwa 20–40 Sekunden …</span></div>`);
-  const status=t=>{ const s=$("#aiStatus"); if(s) s.innerHTML=t; };
+    `<div class="status"><span class="spin"></span><span>Etikett wird gelesen …</span></div>`);
   try{
     const small = blob.size>3_500_000 ? await resize(file,1000,.75) : blob;
-    const {data,error} = await sb.functions.invoke("analyze-label",{body:{image:await blobToBase64(small), mediaType:"image/jpeg"}});
-    if(error){ let msg=error.message; try{ const j=await error.context?.json?.(); if(j?.error) msg=j.error; }catch{} throw new Error(msg); }
-    if(data?.error) throw new Error(data.error);
-    fillForm(data||{});
-    const links=(data?.sources||[]).filter(s=>s?.url).slice(0,5).map(s=>`${(s.title||"").replace(/\|/g,"-")} | ${s.url}`);
-    draft.source=["Vom Etikett gelesen und im Internet ergänzt"+(data?.confidence?` (Sicherheit: ${data.confidence})`:"")+".",...links].join("\n");
-    if(data?.labelReadable===false){
-      draft.source="";
-      status(`<div class="status err">Auf dem Foto ist kein lesbares Etikett zu erkennen. Mach am besten ein schärferes Foto von vorne, ohne Spiegelung, oder trage die Angaben von Hand ein. Das Foto wird trotzdem gespeichert.</div>`);
-    } else if(data?.foundOnline===false){
-      draft.source="Nur vom Etikett gelesen, im Internet nicht gefunden.";
-      status(`<div class="status err">Diesen Wein habe ich im Internet nicht gefunden. Übernommen sind nur die Angaben vom Etikett. Ergänze den Rest bei Bedarf von Hand; du kannst das später auch jederzeit nachholen.</div>`);
-    } else {
-      status(`<div class="status"><span>Angaben ergänzt${data?.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Bitte kurz prüfen und speichern.</span></div>`);
+    const data = await callFn({mode:"label", image:await blobToBase64(small), mediaType:"image/jpeg"});
+    if(data.labelReadable===false){
+      setStatus(`<div class="status err">Auf dem Foto ist kein lesbares Etikett zu erkennen. Mach am besten ein schärferes Foto von vorne, ohne Spiegelung, oder trage die Angaben von Hand ein. Das Foto wird trotzdem gespeichert.</div>`);
+      return;
     }
+    fillForm(data);
+    draft.source="Vom Etikett gelesen.";
+    setStatus(`<div class="status status-col"><span>Etikett gelesen. Bitte kurz prüfen. Für Trinkfenster, Beschreibung, Bewertung und Preis kannst du den Wein im Internet ergänzen lassen (kostet etwas Guthaben).</span>${enrichBtn}</div>`);
+    bindEnrich();
   }catch(e){
-    status(`<div class="status err">Das Etikett konnte nicht automatisch ausgewertet werden (${esc(e.message||"unbekannter Fehler")}). Du kannst die Angaben von Hand eintragen; das Foto wird trotzdem gespeichert.</div>`);
+    setStatus(`<div class="status err status-col"><span>Das Etikett konnte nicht automatisch gelesen werden (${esc(e.message||"unbekannter Fehler")}). Trage Weingut und Wein von Hand ein; danach kannst du den Rest im Internet ergänzen lassen. Das Foto wird trotzdem gespeichert.</span>${enrichBtn}</div>`);
+    bindEnrich();
+  }
+}
+
+async function enrichForm(){
+  const f=$("#wineForm"); if(!f) return;
+  const cur=readForm();
+  if(!cur.producer && !cur.name){ toast("Bitte zuerst Weingut oder Wein eintragen."); return; }
+  setStatus(`<div class="status"><span class="spin"></span><span>Sucht im Internet nach diesem Wein. Das dauert etwa 10–30 Sekunden …</span></div>`);
+  try{
+    const data = await callFn({mode:"enrich", wine:{producer:cur.producer,name:cur.name,vintage:cur.vintage,grape:cur.grape,appellation:cur.appellation,region:cur.region,country:cur.country}});
+    if(data.foundOnline===false){
+      fillForm(data);
+      draft.source="Vom Etikett gelesen, im Internet nicht gefunden.";
+      setStatus(`<div class="status err">Diesen Wein habe ich im Internet nicht gefunden. Übernommen sind nur die Angaben vom Etikett. Ergänze den Rest bei Bedarf von Hand.</div>`);
+      return;
+    }
+    fillForm(data);
+    const links=(data.sources||[]).filter(s=>s?.url).slice(0,5).map(s=>`${(s.title||"").replace(/\|/g,"-")} | ${s.url}`);
+    draft.source=["Im Internet ergänzt"+(data.confidence?` (Sicherheit: ${data.confidence})`:"")+".",...links].join("\n");
+    setStatus(`<div class="status"><span>Im Internet ergänzt${data.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Leere Felder wurden ausgefüllt, deine Eingaben blieben. Bitte prüfen und speichern.</span></div>`);
+  }catch(e){
+    setStatus(`<div class="status err status-col"><span>Die Internetsuche hat nicht geklappt (${esc(e.message||"unbekannter Fehler")}).</span>${enrichBtn}</div>`);
+    bindEnrich();
   }
 }
 
