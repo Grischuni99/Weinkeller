@@ -107,6 +107,7 @@ Alles steckt in einer Funktion am Ende der Datei. Wichtige Teile, in dieser Reih
 | Details | `openDetail(id)`, `windowHtml(w)` (Trinkfenster), `profileHtml(p)`, `sourcesHtml(src)` |
 | Formular | `formHtml(w)`, `readForm()`, `openForm(w)`, `fillForm(info)` (übernimmt Erkennungsergebnis, überschreibt keine bereits ausgefüllten Felder) |
 | Foto & Erkennung | `resize()`, `callFn(body)`, `handlePhoto(file)` (nur Etikett), `enrichForm()` (Knopf `#btnEnrich`, Internetsuche), `setStatus()` |
+| Anderer Jahrgang | `findSibling(cur)` (gleiches Weingut + Name, Akzente/Gross-Klein egal, anderer Jahrgang), `checkSibling()` zeigt im Formular `#siblingHint` mit Knopf „Angaben übernehmen“ (nur wenn der bestehende Eintrag eine Beschreibung hat und das Formular noch keine). Übernimmt nur leere Felder; Trinkfenster, Bewertung, Preis werden nie übernommen |
 | Bewertung | `ratingText(w)`, `ratingBadge(w)`, `ratingFromInfo(x)`, `lookupRating(w, btn)` (Knopf „Bewertung suchen“ in den Details) |
 | Backup | `exportBackup()` (JSON inkl. Fotos als data-URL), `importBackup(file)` (überspringt gleiche Weingut+Name+Jahrgang) |
 | Anmeldung | `auth("login"/"signup")`, `onSession(session)` |

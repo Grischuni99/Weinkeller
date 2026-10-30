@@ -530,6 +530,7 @@ function formHtml(w, busy){
   const p=w.profile||{}, v=k=>esc(w[k]??""), src=photoSrc(w);
   return `
   <div class="sheet-top"><h2 class="big" style="margin:0;font-size:24px">${w.id?"Wein bearbeiten":"Neuer Wein"}</h2><button class="x" type="button" data-close aria-label="Schliessen">×</button></div>
+  <div id="siblingHint"></div>
   <div id="aiStatus" style="margin-bottom:12px">${busy||(w.id&&!w.description?`<div class="status status-col"><span>Fehlen Angaben? Lass den Wein im Internet ergänzen (kostet etwas Guthaben).</span>${enrichBtn}</div>`:"")}</div>
   <form id="wineForm" novalidate>
     ${src?`<img class="preview-img" src="${esc(src)}" alt="Etikett">`:""}
@@ -595,7 +596,7 @@ function readForm(){
 function openForm(w, busy){
   draft={...w};
   openSheet(formHtml(draft, busy));
-  bindEnrich();
+  bindEnrich(); bindSibling();
   $("#f-wishlist").addEventListener("change",e=>{ $("#wishNoteWrap").hidden=!e.target.checked; const b=$("#f-bottles"); if(e.target.checked && b.value==="1") b.value="0"; else if(!e.target.checked && b.value==="0") b.value="1"; });
   $("#wineForm").addEventListener("submit", async e=>{
     e.preventDefault();
@@ -648,6 +649,43 @@ async function callFn(body){
   return data||{};
 }
 const enrichBtn = `<button class="btn" type="button" id="btnEnrich"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Im Internet ergänzen</button>`;
+/* ---------- Gleicher Wein, anderer Jahrgang ---------- */
+const normTxt = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
+function findSibling(cur){
+  const n=normTxt(cur.name), p=normTxt(cur.producer);
+  if(!n) return null;
+  const cands = wines.filter(w=>{
+    if(w.id && w.id===draft?.id) return false;
+    const wn=normTxt(w.name), wp=normTxt(w.producer);
+    if(!wn || !(wn===n || (n.length>5 && wn.includes(n)) || (wn.length>5 && n.includes(wn)))) return false;
+    if(p && wp && !(wp===p || wp.includes(p) || p.includes(wp))) return false;
+    return String(w.vintage||"")!==String(cur.vintage||"") || !cur.vintage;
+  });
+  // den Eintrag mit den meisten Angaben nehmen
+  const score = w => [w.description,w.grape,w.region,w.appellation].filter(Boolean).length + (w.pairings?.length?1:0) + (w.profile&&Object.keys(w.profile).length?1:0);
+  return cands.sort((a,b)=>score(b)-score(a))[0] || null;
+}
+function checkSibling(){
+  const box=$("#siblingHint"), f=$("#wineForm"); if(!box||!f) return;
+  const cur=readForm(); const sib=findSibling(cur);
+  if(!sib || !sib.description || cur.description){ box.innerHTML=""; return; }
+  const yr = sib.vintage ? `Jahrgang ${esc(sib.vintage)}` : "ohne Jahrgang";
+  box.innerHTML=`<div class="status status-col" style="margin-bottom:12px"><span>Diesen Wein hast du schon ${sib.wishlist?"auf der Wunschliste":"im Keller"} (${yr}). Beschreibung, Rebsorte, Region, Geschmacksprofil und Speisen kannst du gratis übernehmen. Trinkfenster und Bewertung gelten je Jahrgang und werden nicht übernommen.</span><button class="btn primary" type="button" id="btnCopySib">Angaben vom ${yr} übernehmen</button></div>`;
+  $("#btnCopySib").onclick=()=>{
+    fillForm({grape:sib.grape, appellation:sib.appellation, region:sib.region, country:sib.country, volume:sib.volume,
+      color:sib.color, description:sib.description, pairings:sib.pairings||[], profile:sib.profile||{}});
+    if(!draft.source || draft.source==="Vom Etikett gelesen.") draft.source=`Angaben übernommen vom ${sib.vintage?"Jahrgang "+sib.vintage:"bestehenden Eintrag"}.`;
+    box.innerHTML=`<div class="status" style="margin-bottom:12px"><span>Angaben vom ${yr} übernommen (nur leere Felder). Für Trinkfenster und Bewertung dieses Jahrgangs kannst du unten im Internet ergänzen.</span></div>`;
+    if(!$("#btnEnrich")){ setStatus(`<div class="status status-col"><span>Trinkfenster und Bewertung für diesen Jahrgang suchen?</span>${enrichBtn}</div>`); bindEnrich(); }
+  };
+}
+let sibTimer=null;
+function bindSibling(){
+  const f=$("#wineForm"); if(!f) return;
+  ["producer","name","vintage"].forEach(n=>f.elements[n]?.addEventListener("input",()=>{ clearTimeout(sibTimer); sibTimer=setTimeout(checkSibling,400); }));
+  checkSibling();
+}
+
 function setStatus(t){ const s=$("#aiStatus"); if(s) s.innerHTML=t; }
 function bindEnrich(){ const b=$("#btnEnrich"); if(b) b.onclick=enrichForm; }
 
@@ -665,6 +703,7 @@ async function handlePhoto(file){
     }
     fillForm(data);
     draft.source="Vom Etikett gelesen.";
+    checkSibling();
     setStatus(`<div class="status status-col"><span>Etikett gelesen. Bitte kurz prüfen. Für Trinkfenster, Beschreibung, Bewertung und Preis kannst du den Wein im Internet ergänzen lassen (kostet etwas Guthaben).</span>${enrichBtn}</div>`);
     bindEnrich();
   }catch(e){
