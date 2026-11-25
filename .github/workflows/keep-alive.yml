@@ -1,9 +1,9 @@
 # Hält das kostenlose Supabase-Projekt wach (wird sonst nach 1 Woche ohne Zugriff pausiert).
-# Liest die Adresse und den öffentlichen anon-Key aus config.js – keine weitere Einrichtung nötig.
+# Liest Adresse und öffentlichen anon-Key aus config.js – keine weitere Einrichtung nötig.
 name: Supabase wach halten
 on:
   schedule:
-    - cron: "17 6 */3 * *"   # alle 3 Tage um 06:17 UTC
+    - cron: "17 6 * * *"   # täglich um 06:17 UTC
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -19,7 +19,19 @@ jobs:
           URL=$(grep -oP 'supabaseUrl:\s*"\K[^"]+' config.js)
           KEY=$(grep -oP 'supabaseAnonKey:\s*"\K[^"]+' config.js)
           if [ -z "$URL" ] || [ -z "$KEY" ]; then echo "config.js ist noch nicht ausgefüllt"; exit 0; fi
-          curl -sS -f -X POST "$URL/rest/v1/rpc/ping" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}'
+          H=(-H "apikey: $KEY" -H "Authorization: Bearer $KEY")
+          echo "1) Datenbankfunktion ping"
+          curl -sS -f -X POST "$URL/rest/v1/rpc/ping" "${H[@]}" -H "Content-Type: application/json" -d '{}'
+          echo
+          TABLE=$(grep -oP "(?<!storage)\.from\(\s*['\"\`]\K[A-Za-z0-9_]+" index.html | head -1)
+          if [ -n "$TABLE" ]; then
+            echo "2) Abfrage der Tabelle $TABLE"
+            curl -sS -o /dev/null -w "HTTP %{http_code}\n" "$URL/rest/v1/$TABLE?select=*&limit=1" "${H[@]}"
+          fi
+          echo "3) Anmeldedienst"
+          curl -sS -o /dev/null -w "HTTP %{http_code}\n" "$URL/auth/v1/health" "${H[@]}"
+          echo "4) Foto-Speicher"
+          curl -sS -o /dev/null -w "HTTP %{http_code}\n" "$URL/storage/v1/bucket" "${H[@]}"
       # GitHub schaltet geplante Aufgaben nach 60 Tagen ohne Änderung im Repository ab.
       # Darum alle ~45 Tage eine winzige Änderung festhalten.
       - name: Repository aktiv halten
@@ -34,4 +46,3 @@ jobs:
             git commit -m "Weinkeller aktiv halten"
             git push
           fi
-
