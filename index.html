@@ -155,6 +155,7 @@ img{max-width:100%}
 .menu-pop{position:absolute;right:0;top:calc(100% + 6px);background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px;min-width:220px;z-index:8;display:flex;flex-direction:column}
 .menu-pop button{border:0;background:none;text-align:left;padding:10px 12px;border-radius:8px;font-size:14px}
 .menu-pop button:hover{background:var(--sunk)}
+.menu-ver{border-top:1px solid var(--line);margin-top:4px;padding:8px 12px 4px;font-size:12px;opacity:.6}
 .icon-btn{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:var(--surface);display:grid;place-items:center;padding:0}
 .icon-btn svg{width:18px;height:18px}
 .sources{margin:8px 0 0;padding-left:18px;font-size:13px}
@@ -225,6 +226,7 @@ fieldset.pair-pick legend{font-size:12px;font-weight:600;color:var(--muted);lett
           <button type="button" id="mExport">Backup herunterladen</button>
           <button type="button" id="mImport">Backup einlesen</button>
           <button type="button" id="mLogout">Abmelden</button>
+          <div class="menu-ver">Version 6 · 25.11.2026</div>
         </div>
       </div>
       <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
@@ -762,11 +764,11 @@ async function enrichForm(fromBack){
     fillForm(data);
     const links=(data.sources||[]).filter(s=>s?.url).slice(0,5).map(s=>`${(s.title||"").replace(/\|/g,"-")} | ${s.url}`);
     draft.source=["Im Internet ergänzt"+(data.confidence?` (Sicherheit: ${data.confidence})`:"")+".",...links].join("\n");
-    setStatus(`<div class="status"><span>Im Internet ergänzt${data.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Leere Felder wurden ausgefüllt, deine Eingaben blieben. Bitte prüfen und speichern.</span>${saveNowBtn}</div>`);
-    bindSaveNow();
+    setStatus(`<div class="status"><span>Im Internet ergänzt${data.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Leere Felder wurden ausgefüllt, deine Eingaben blieben. Bitte prüfen und speichern.${fromBack===true?"":" Fehlt noch etwas? Mit einem Foto der Rückseite suche ich nochmals."}</span><div class="actions">${saveNowBtn}${fromBack===true?"":backBtn}</div></div>`);
+    bindSaveNow(); bindBack();
   }catch(e){
-    setStatus(`<div class="status err status-col"><span>Die Internetsuche hat nicht geklappt (${esc(e.message||"unbekannter Fehler")}). Die Angaben vom Etikett bleiben stehen.</span><div class="actions">${enrichBtn}${saveNowBtn}</div></div>`);
-    bindEnrich(); bindSaveNow();
+    setStatus(`<div class="status err status-col"><span>Die Internetsuche hat nichts Brauchbares ergeben (${esc(e.message||"unbekannter Fehler")}). Die Angaben vom Etikett bleiben stehen.${fromBack===true?"":" Du kannst die Rückseite der Flasche fotografieren, dann suche ich mit diesen Angaben nochmals (etwa 3–4 Rappen)."}</span><div class="actions">${fromBack===true?enrichBtn:backBtn}${saveNowBtn}</div></div>`);
+    bindEnrich(); bindBack(); bindSaveNow();
   }
 }
 
