@@ -87,8 +87,9 @@ main{padding-block:10px 60px}
 .empty-state h2{font-family:var(--f-display);color:var(--fg);font-weight:500;font-size:22px;margin:0 0 6px}
 
 /* Blatt */
+html.sheet-open,html.sheet-open body{overscroll-behavior-y:none}
 .sheet-bg{position:fixed;inset:0;background:rgba(20,10,14,.45);z-index:20;display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--surface);width:100%;max-width:720px;max-height:92vh;overflow-y:auto;border-radius:16px 16px 0 0;padding:20px max(18px,env(safe-area-inset-left,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-right,0px))}
+.sheet{background:var(--surface);width:100%;max-width:720px;max-height:92vh;overflow-y:auto;overscroll-behavior:contain;border-radius:16px 16px 0 0;padding:20px max(18px,env(safe-area-inset-left,0px)) calc(28px + env(safe-area-inset-bottom,0px)) max(18px,env(safe-area-inset-right,0px))}
 .sheet-top{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:12px}
 .x{border:0;background:var(--sunk);width:34px;height:34px;border-radius:50%;font-size:18px}
 .detail-hero{display:grid;grid-template-columns:minmax(0,140px) 1fr;gap:18px;align-items:start}
@@ -227,6 +228,7 @@ fieldset.pair-pick legend{font-size:12px;font-weight:600;color:var(--muted);lett
         </div>
       </div>
       <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
+      <input type="file" id="backInput" accept="image/*" capture="environment" hidden>
       <input type="file" id="importInput" accept="application/json,.json" hidden>
     </div>
   </div>
@@ -454,10 +456,11 @@ function setBottles(id, n){
 }
 
 /* ---------- Details ---------- */
-function closeSheet(){ $("#sheetRoot").innerHTML=""; }
+function closeSheet(){ $("#sheetRoot").innerHTML=""; document.documentElement.classList.remove("sheet-open"); }
 function openSheet(html){
   $("#sheetRoot").innerHTML=`<div class="sheet-bg" id="sheetBg"><div class="sheet" role="dialog" aria-modal="true">${html}</div></div>`;
-  $("#sheetBg").addEventListener("click",e=>{ if(e.target.id==="sheetBg") closeSheet(); });
+  document.documentElement.classList.add("sheet-open");
+  $("#sheetBg").addEventListener("click",e=>{ if(e.target.id==="sheetBg" && !$("#wineForm")) closeSheet(); });
 }
 function profileHtml(p){
   if(!p || !PROFILE.some(([k])=>p[k])) return "";
@@ -594,7 +597,7 @@ function readForm(){
   return out;
 }
 function openForm(w, busy){
-  draft={...w};
+  draft={...w}; backInfo=null;
   openSheet(formHtml(draft, busy));
   bindEnrich(); bindSibling();
   $("#f-wishlist").addEventListener("change",e=>{ $("#wishNoteWrap").hidden=!e.target.checked; const b=$("#f-bottles"); if(e.target.checked && b.value==="1") b.value="0"; else if(!e.target.checked && b.value==="0") b.value="1"; });
@@ -648,6 +651,8 @@ async function callFn(body){
   if(data?.error) throw new Error(data.error);
   return data||{};
 }
+const saveNowBtn = `<button class="btn primary" type="button" id="btnSaveNow">Jetzt speichern</button>`;
+function bindSaveNow(){ const b=$("#btnSaveNow"); if(b) b.onclick=()=>$("#wineForm")?.requestSubmit(); $("#aiStatus")?.scrollIntoView({block:"nearest",behavior:"smooth"}); }
 const enrichBtn = `<button class="btn" type="button" id="btnEnrich"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>Im Internet ergänzen</button>`;
 /* ---------- Gleicher Wein, anderer Jahrgang ---------- */
 const normTxt = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]/g,"");
@@ -687,7 +692,29 @@ function bindSibling(){
 }
 
 function setStatus(t){ const s=$("#aiStatus"); if(s) s.innerHTML=t; }
-function bindEnrich(){ const b=$("#btnEnrich"); if(b) b.onclick=enrichForm; }
+function bindEnrich(){ const b=$("#btnEnrich"); if(b) b.onclick=()=>enrichForm(false); }
+const backBtn = `<button class="btn" type="button" id="btnBack"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Rückseite fotografieren</button>`;
+let backInfo=null;
+function bindBack(){ const b=$("#btnBack"); if(b) b.onclick=()=>$("#backInput").click(); }
+async function handleBackPhoto(file){
+  if(!$("#wineForm")) return;
+  setStatus(`<div class="status"><span class="spin"></span><span>Rückseite wird gelesen …</span></div>`);
+  try{
+    let blob; try{ blob=await resize(file,1400,.85); }catch{ blob=file; }
+    const small = blob.size>3_500_000 ? await resize(file,1000,.75) : blob;
+    const data = await callFn({mode:"label", image:await blobToBase64(small), mediaType:"image/jpeg"});
+    if(data.labelReadable===false){
+      setStatus(`<div class="status err status-col"><span>Auf dem Foto der Rückseite ist nichts Lesbares zu erkennen. Versuche es mit einem schärferen Foto ohne Spiegelung.</span><div class="actions">${backBtn}${saveNowBtn}</div></div>`);
+      bindBack(); bindSaveNow(); return;
+    }
+    fillForm(data);
+    backInfo=data;
+    await enrichForm(true);
+  }catch(e){
+    setStatus(`<div class="status err status-col"><span>Die Rückseite konnte nicht gelesen werden (${esc(e.message||"unbekannter Fehler")}). Die bisherigen Angaben bleiben stehen.</span><div class="actions">${backBtn}${saveNowBtn}</div></div>`);
+    bindBack(); bindSaveNow();
+  }
+}
 
 async function handlePhoto(file){
   let blob; try{ blob=await resize(file,1400,.85); }catch{ blob=file; }
@@ -712,26 +739,34 @@ async function handlePhoto(file){
   }
 }
 
-async function enrichForm(){
+async function enrichForm(fromBack){
   const f=$("#wineForm"); if(!f) return;
   const cur=readForm();
   if(!cur.producer && !cur.name){ toast("Bitte zuerst Weingut oder Wein eintragen."); return; }
   setStatus(`<div class="status"><span class="spin"></span><span>Sucht im Internet nach diesem Wein. Das dauert etwa 10–30 Sekunden …</span></div>`);
   try{
-    const data = await callFn({mode:"enrich", wine:{producer:cur.producer,name:cur.name,vintage:cur.vintage,grape:cur.grape,appellation:cur.appellation,region:cur.region,country:cur.country}});
+    const wine={producer:cur.producer,name:cur.name,vintage:cur.vintage,grape:cur.grape,appellation:cur.appellation,region:cur.region,country:cur.country};
+    if(backInfo){ // Abweichende Angaben der Rückseite (z. B. der eigentliche Erzeuger) zusätzlich mitgeben
+      Object.keys(wine).forEach(k=>{ const b=backInfo[k]!=null?String(backInfo[k]).trim():""; if(b && wine[k] && normTxt(b)!==normTxt(wine[k]) && !normTxt(wine[k]).includes(normTxt(b))) wine[k]=`${wine[k]} (Rückseite: ${b})`; else if(b && !wine[k]) wine[k]=b; });
+    }
+    const data = await callFn({mode:"enrich", wine});
     if(data.foundOnline===false){
       fillForm(data);
-      draft.source="Vom Etikett gelesen, im Internet nicht gefunden.";
-      setStatus(`<div class="status err">Diesen Wein habe ich im Internet nicht gefunden. Übernommen sind nur die Angaben vom Etikett. Ergänze den Rest bei Bedarf von Hand.</div>`);
+      draft.source= fromBack===true ? "Von Vorder- und Rückseite gelesen, im Internet nicht gefunden." : "Vom Etikett gelesen, im Internet nicht gefunden.";
+      setStatus(`<div class="status err status-col"><span>${fromBack===true
+        ? "Auch mit den Angaben der Rückseite habe ich den Wein im Internet nicht gefunden. Die gelesenen Angaben bleiben stehen. Ergänze den Rest bei Bedarf von Hand und speichere den Wein."
+        : "Diesen Wein habe ich im Internet nicht gefunden. Die Angaben vom Etikett bleiben stehen. Du kannst die Rückseite der Flasche fotografieren, dann suche ich mit diesen Angaben nochmals (etwa 3–4 Rappen). Oder du ergänzt den Rest von Hand und speicherst."}</span><div class="actions">${fromBack===true?"":backBtn}${saveNowBtn}</div></div>`);
+      bindBack(); bindSaveNow();
       return;
     }
     fillForm(data);
     const links=(data.sources||[]).filter(s=>s?.url).slice(0,5).map(s=>`${(s.title||"").replace(/\|/g,"-")} | ${s.url}`);
     draft.source=["Im Internet ergänzt"+(data.confidence?` (Sicherheit: ${data.confidence})`:"")+".",...links].join("\n");
-    setStatus(`<div class="status"><span>Im Internet ergänzt${data.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Leere Felder wurden ausgefüllt, deine Eingaben blieben. Bitte prüfen und speichern.</span></div>`);
+    setStatus(`<div class="status"><span>Im Internet ergänzt${data.confidence?` · Sicherheit ${esc(data.confidence)}`:""}. Leere Felder wurden ausgefüllt, deine Eingaben blieben. Bitte prüfen und speichern.</span>${saveNowBtn}</div>`);
+    bindSaveNow();
   }catch(e){
-    setStatus(`<div class="status err status-col"><span>Die Internetsuche hat nicht geklappt (${esc(e.message||"unbekannter Fehler")}).</span>${enrichBtn}</div>`);
-    bindEnrich();
+    setStatus(`<div class="status err status-col"><span>Die Internetsuche hat nicht geklappt (${esc(e.message||"unbekannter Fehler")}). Die Angaben vom Etikett bleiben stehen.</span><div class="actions">${enrichBtn}${saveNowBtn}</div></div>`);
+    bindEnrich(); bindSaveNow();
   }
 }
 
@@ -799,6 +834,7 @@ $("#mManual").onclick=()=>{ $("#menuPop").hidden=true; openForm(newDefaults()); 
 $("#mExport").onclick=()=>{ $("#menuPop").hidden=true; exportBackup(); };
 $("#mImport").onclick=()=>{ $("#menuPop").hidden=true; $("#importInput").click(); };
 $("#mLogout").onclick=async()=>{ $("#menuPop").hidden=true; await sb.auth.signOut(); };
+$("#backInput").addEventListener("change",e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) handleBackPhoto(f); });
 $("#fileInput").addEventListener("change",e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) handlePhoto(f); });
 $("#importInput").addEventListener("change",e=>{ const f=e.target.files?.[0]; e.target.value=""; if(f) importBackup(f); });
 
