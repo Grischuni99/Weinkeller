@@ -226,7 +226,7 @@ fieldset.pair-pick legend{font-size:12px;font-weight:600;color:var(--muted);lett
           <button type="button" id="mExport">Backup herunterladen</button>
           <button type="button" id="mImport">Backup einlesen</button>
           <button type="button" id="mLogout">Abmelden</button>
-          <div class="menu-ver">Version 6 · 25.11.2026</div>
+          <div class="menu-ver">Version 7 · 25.11.2026</div>
         </div>
       </div>
       <input type="file" id="fileInput" accept="image/*" capture="environment" hidden>
@@ -700,11 +700,11 @@ let backInfo=null;
 function bindBack(){ const b=$("#btnBack"); if(b) b.onclick=()=>$("#backInput").click(); }
 async function handleBackPhoto(file){
   if(!$("#wineForm")) return;
-  setStatus(`<div class="status"><span class="spin"></span><span>Rückseite wird gelesen …</span></div>`);
+  setStatus(`<div class="status"><span class="spin"></span><span>Rückseite wird genau gelesen …</span></div>`);
   try{
     let blob; try{ blob=await resize(file,1400,.85); }catch{ blob=file; }
     const small = blob.size>3_500_000 ? await resize(file,1000,.75) : blob;
-    const data = await callFn({mode:"label", image:await blobToBase64(small), mediaType:"image/jpeg"});
+    const data = await callFn({mode:"back", image:await blobToBase64(small), mediaType:"image/jpeg"});
     if(data.labelReadable===false){
       setStatus(`<div class="status err status-col"><span>Auf dem Foto der Rückseite ist nichts Lesbares zu erkennen. Versuche es mit einem schärferen Foto ohne Spiegelung.</span><div class="actions">${backBtn}${saveNowBtn}</div></div>`);
       bindBack(); bindSaveNow(); return;
@@ -748,6 +748,7 @@ async function enrichForm(fromBack){
   setStatus(`<div class="status"><span class="spin"></span><span>Sucht im Internet nach diesem Wein. Das dauert etwa 10–30 Sekunden …</span></div>`);
   try{
     const wine={producer:cur.producer,name:cur.name,vintage:cur.vintage,grape:cur.grape,appellation:cur.appellation,region:cur.region,country:cur.country};
+    if(backInfo?.backText) wine.backText=String(backInfo.backText).slice(0,2500);
     if(backInfo){ // Abweichende Angaben der Rückseite (z. B. der eigentliche Erzeuger) zusätzlich mitgeben
       Object.keys(wine).forEach(k=>{ const b=backInfo[k]!=null?String(backInfo[k]).trim():""; if(b && wine[k] && normTxt(b)!==normTxt(wine[k]) && !normTxt(wine[k]).includes(normTxt(b))) wine[k]=`${wine[k]} (Rückseite: ${b})`; else if(b && !wine[k]) wine[k]=b; });
     }
